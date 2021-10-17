@@ -1,0 +1,4 @@
+[bot]
+token = 123123123:zzzzzzzzzzzzz
+; format is from|to, from|to
+chat_relays = -100123123123|-100456456456, -100789789789|-100234234234
