@@ -186,7 +186,7 @@ def command_scramble(update: Update, context: CallbackContext) -> None:
                                  action=ChatAction.TYPING)
 
     try:
-        sub_scramble(text)
+        text = sub_scramble(text)
     except Exception as exc:
         update.message.reply_text('Error: ' + str(exc))
 
@@ -252,7 +252,8 @@ def command_distort(update: Update, context: CallbackContext) -> None:
 def command_relay_text(update: Update, context: CallbackContext) -> None:
     try:
         text = sub_scramble(update.message.text)
-    except:
+    except Exception as exc:
+        print('command_relay_text:', str(exc))
         return
     context.bot.send_message(get_relays()[update.message.chat_id],
                              '*' + _e(get_username(update)) + '*\n' + _e(ellipsis(text, 3900)),
@@ -262,11 +263,19 @@ def command_relay_text(update: Update, context: CallbackContext) -> None:
 def command_relay_photo(update: Update, context: CallbackContext) -> None:
     try:
         filename = sub_distort(update, context, ['50'])
-    except:
+    except Exception as exc:
+        print('command_relay_photo:', str(exc))
         return
+    text = None
+    if update.message.caption:
+        try:
+            text = sub_scramble(update.message.caption)
+        except Exception as exc:
+            print('command_relay_photo (caption):', str(exc))
     context.bot.send_photo(get_relays()[update.message.chat_id],
                            open(filename, 'rb'),
-                           caption='*' + _e(get_username(update)) + '*',
+                           caption=('*' + _e(get_username(update)) + '*\n' + _e(ellipsis(text, 900)) if text else
+                                    '*' + _e(get_username(update)) + '*'),
                            parse_mode=PARSEMODE_MARKDOWN_V2)
 
 
@@ -295,9 +304,9 @@ def main() -> None:
 
     sources = get_relays().keys()
     dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.text & ~Filters.command,
-                                          command_relay_text, run_async=True))
+                                          command_relay_text, run_async=True), group=1)
     dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.photo,
-                                          command_relay_photo, run_async=True))
+                                          command_relay_photo, run_async=True), group=1)
 
     # dispatcher.add_handler(MessageHandler(Filters.text & Filters.chat_type.groups, command_check))
 
