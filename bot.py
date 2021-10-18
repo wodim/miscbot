@@ -9,6 +9,7 @@ from telegram.ext import CallbackContext, CommandHandler, Filters, MessageHandle
 from telegram.utils.helpers import escape_markdown
 from wand.image import Image
 
+from message_history import MessageHistory
 from translate import translate
 
 
@@ -250,33 +251,71 @@ def command_distort(update: Update, context: CallbackContext) -> None:
 
 
 def command_relay_text(update: Update, context: CallbackContext) -> None:
+    message_history.push(update.message)
+
     try:
         text = sub_scramble(update.message.text)
     except Exception as exc:
         print('command_relay_text:', str(exc))
         return
-    context.bot.send_message(get_relays()[update.message.chat_id],
-                             '*' + _e(get_username(update)) + '*\n' + _e(ellipsis(text, 3900)),
-                             parse_mode=PARSEMODE_MARKDOWN_V2, disable_web_page_preview=True)
+
+    if message_history.can_post(update.message):
+        message_history.add_relayed_message(
+            update.message,
+            context.bot.send_message(get_relays()[update.message.chat_id],
+                                     '*' + _e(get_username(update)) + '*\n' + _e(ellipsis(text, 3900)),
+                                     parse_mode=PARSEMODE_MARKDOWN_V2, disable_web_page_preview=True)
+        )
 
 
 def command_relay_photo(update: Update, context: CallbackContext) -> None:
+    message_history.push(update.message)
+
     try:
         filename = sub_distort(update, context, ['50'])
     except Exception as exc:
         print('command_relay_photo:', str(exc))
         return
+
     text = None
     if update.message.caption:
         try:
             text = sub_scramble(update.message.caption)
         except Exception as exc:
             print('command_relay_photo (caption):', str(exc))
-    context.bot.send_photo(get_relays()[update.message.chat_id],
-                           open(filename, 'rb'),
-                           caption=('*' + _e(get_username(update)) + '*\n' + _e(ellipsis(text, 900)) if text else
-                                    '*' + _e(get_username(update)) + '*'),
-                           parse_mode=PARSEMODE_MARKDOWN_V2)
+
+    if message_history.can_post(update.message):
+        message_history.add_relayed_message(
+            update.message,
+            context.bot.send_photo(get_relays()[update.message.chat_id],
+                                   open(filename, 'rb'),
+                                   caption=('*' + _e(get_username(update)) + '*\n' + _e(ellipsis(text, 900)) if text else
+                                            '*' + _e(get_username(update)) + '*'),
+                                   parse_mode=PARSEMODE_MARKDOWN_V2)
+        )
+
+
+message_history = MessageHistory()
+
+
+def cron_delete(_: CallbackContext) -> None:
+    for from_ in get_relays().keys():
+        for message in message_history.get_latest(from_):
+            try:
+                relay_check_message = message.forward(_config('chat_relay_delete_channel'))
+            except:
+                try:
+                    # try to remove the relayed message
+                    message.relayed_message.delete()
+                except:
+                    # failed, so the message wasn't relayed yet
+                    # prevent the bot from posting the relayed message
+                    message_history.add_pending_removal(message)
+                message_history.remove(message)
+            try:
+                relay_check_message.delete()
+            except:
+                pass
 
 
 def main() -> None:
@@ -309,6 +348,9 @@ def main() -> None:
                                           command_relay_photo, run_async=True), group=1)
 
     # dispatcher.add_handler(MessageHandler(Filters.text & Filters.chat_type.groups, command_check))
+
+    # add a "cron" job that runs every five seconds
+    dispatcher.job_queue.run_repeating(cron_delete, interval=5)
 
     # Start the Bot
     updater.start_polling()
