@@ -164,7 +164,7 @@ def command_translate(update: Update, context: CallbackContext) -> None:
 
 
 def sub_scramble(text: str) -> None:
-    languages = 'ja,he,zh,hi,fi,ru,el,de'.split(',')
+    languages = 'ja,he,zh,hi,fi,ru,el'.split(',')
     random.shuffle(languages)
     languages = ['es'] + languages + ['es']
     return translate(text, languages)
@@ -251,6 +251,9 @@ def command_distort(update: Update, context: CallbackContext) -> None:
 
 
 def command_relay_text(update: Update, context: CallbackContext) -> None:
+    if not update.message:
+        return
+
     message_history.push(update.message)
 
     try:
@@ -263,12 +266,15 @@ def command_relay_text(update: Update, context: CallbackContext) -> None:
         message_history.add_relayed_message(
             update.message,
             context.bot.send_message(get_relays()[update.message.chat_id],
-                                     '*' + _e(get_username(update)) + '*\n' + _e(ellipsis(text, 3900)),
+                                     '*' + _e(get_username(update) + ':') + '*\n' + _e(ellipsis(text, 3900)),
                                      parse_mode=PARSEMODE_MARKDOWN_V2, disable_web_page_preview=True)
         )
 
 
 def command_relay_photo(update: Update, context: CallbackContext) -> None:
+    if not update.message:
+        return
+
     message_history.push(update.message)
 
     try:
@@ -289,7 +295,7 @@ def command_relay_photo(update: Update, context: CallbackContext) -> None:
             update.message,
             context.bot.send_photo(get_relays()[update.message.chat_id],
                                    open(filename, 'rb'),
-                                   caption=('*' + _e(get_username(update)) + '*\n' + _e(ellipsis(text, 900)) if text else
+                                   caption=('*' + _e(get_username(update) + ':') + '*\n' + _e(ellipsis(text, 900)) if text else
                                             '*' + _e(get_username(update)) + '*'),
                                    parse_mode=PARSEMODE_MARKDOWN_V2)
         )
@@ -350,7 +356,7 @@ def main() -> None:
     # dispatcher.add_handler(MessageHandler(Filters.text & Filters.chat_type.groups, command_check))
 
     # add a "cron" job that runs every five seconds
-    dispatcher.job_queue.run_repeating(cron_delete, interval=5)
+    dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
     # Start the Bot
     updater.start_polling()

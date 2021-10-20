@@ -52,6 +52,9 @@ class WorkerThread(threading.Thread):
                 translation = decoded_json['responseData']['translatedText']
                 break
             except:
+                if response.status == 414:
+                    # uri too long: we won't recover from this by retrying
+                    break
                 print('JSON error, waiting 2 secs:', response.text)
                 time.sleep(2)
         if response is None:
