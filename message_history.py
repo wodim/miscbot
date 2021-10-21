@@ -31,7 +31,7 @@ class MessageHistory:
 
         for pending_removal in self.pending_removals:
             if datetime.utcnow() - timedelta(minutes=self.HISTORY_MINUTES) > pending_removal.date.replace(tzinfo=None):
-                self.pending_removals.remove(message)
+                self.pending_removals.remove(pending_removal)
 
     def get_latest(self, chat_id):
         try:
