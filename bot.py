@@ -179,6 +179,8 @@ def command_scramble(update: Update, context: CallbackContext) -> None:
         text = update.message.reply_to_message.text.strip()
     elif context.args:
         text = remove_command(update.message.text)
+    elif update.message.text:
+        text = update.message.text.strip()
     else:
         update.message.reply_text('Scramble what? Type or quote something.')
         return
@@ -238,8 +240,8 @@ def command_distort(update: Update, context: CallbackContext) -> None:
     if not update.message:
         return
 
-    text = update.message.text or update.message.caption
-    if not rx_command_check.match(text):
+    text = update.message.text or update.message.caption or ''
+    if text and not rx_command_check.match(text):
         return
 
     filename = sub_distort(update, context, remove_command(text).split(' '))
@@ -344,7 +346,10 @@ def main() -> None:
 
     # reply to anything that is said to me in private
     dispatcher.add_handler(MessageHandler(
-        Filters.text & ~Filters.command & Filters.chat_type.private, command_help
+        Filters.text & ~Filters.command & Filters.chat_type.private, command_scramble, run_async=True
+    ))
+    dispatcher.add_handler(MessageHandler(
+        Filters.photo & ~Filters.command & Filters.chat_type.private, command_distort, run_async=True
     ))
 
     sources = get_relays().keys()
