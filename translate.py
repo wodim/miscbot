@@ -42,8 +42,8 @@ class WorkerThread(threading.Thread):
 
         response = None
         for _ in range(5):
+            params['de'] = ''.join(random.choices(string.ascii_lowercase + string.digits, k=12)) + '@gmail.com'
             try:
-                params['de'] = ''.join(random.choices(string.ascii_lowercase + string.digits, k=12)) + '@gmail.com'
                 response = self.s.get(url, params=params, timeout=5)
             except:
                 continue
@@ -79,9 +79,22 @@ class WorkerThread(threading.Thread):
         text = html.unescape(text)
         text = '\n'.join([x.strip() for x in text.split('\n')])
         text = text.replace('@ ', '@')
-        text = '. '.join([x.strip().capitalize() for x in text.split('.')])
-        text = text.strip()
+        text = WorkerThread.capitalize(text.strip())
         return text
+
+    @staticmethod
+    def capitalize(text):
+        upper = True
+        output = ''
+        for x in text.lower():
+            if x.isalpha() and upper:
+                output += x.upper()
+                upper = False
+            else:
+                output += x
+            if not x.isalpha() and x not in set(' \t'):
+                upper = True
+        return output
 
     def join(self, timeout=None):
         self.stop_request.set()
@@ -92,7 +105,7 @@ class TranslatorException(Exception):
     pass
 
 
-def translate(text, languages):
+def translate(text, languages, callback=None, callback_args=None):
     result_q = queue.Queue()
 
     with open('proxies.txt', 'rt', encoding='utf8') as fp:
@@ -112,6 +125,8 @@ def translate(text, languages):
                 if thread.ident != ident:
                     thread.join(timeout=0)
                     pool.remove(thread)"""
+            if callback and callback_args:
+                callback(callback_args, 'typing')
         elif status == 'result':
             # kill everything and return
             for thread in pool:

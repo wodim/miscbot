@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 class MessageHistory:
     HISTORY_MINUTES = 10
-    HISTORY_COUNT = 3
+    HISTORY_COUNT = 5
 
     def __init__(self):
         self.history = {}
