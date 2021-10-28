@@ -92,7 +92,7 @@ class WorkerThread(threading.Thread):
                 upper = False
             else:
                 output += x
-            if not x.isalpha() and x not in set(' \t'):
+            if not x.isalpha() and not x.isnumeric() and x not in set(' \t,":;'):
                 upper = True
         return output
 
