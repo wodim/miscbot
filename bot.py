@@ -375,9 +375,9 @@ def main() -> None:
                                           command_distort, run_async=True))
 
     sources = get_relays().keys()
-    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.text & ~Filters.command,
+    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.text & ~Filters.command & Filters.update.message,
                                           command_relay_text, run_async=True), group=1)
-    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.photo,
+    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.photo & Filters.update.message,
                                           command_relay_photo, run_async=True), group=1)
 
     # dispatcher.add_handler(MessageHandler(Filters.text & Filters.chat_type.groups, command_check))
