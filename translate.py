@@ -30,7 +30,7 @@ class WorkerThread(threading.Thread):
                 text = self.clean_up(text)
                 if self.stop_request.isSet():
                     return
-                self.result_q.put((threading.get_ident(), 'partial_result', None))
+                self.result_q.put((threading.get_ident(), 'partial_result', (text, language)))
                 source = language
             self.result_q.put((threading.get_ident(), 'result', text))
         except Exception:
@@ -79,6 +79,8 @@ class WorkerThread(threading.Thread):
         text = html.unescape(text)
         text = '\n'.join([x.strip() for x in text.split('\n')])
         text = text.replace('@ ', '@')
+        if text.endswith(';'):
+            text = text[:-1] + '?'
         text = WorkerThread.capitalize(text.strip())
         return text
 
@@ -92,7 +94,9 @@ class WorkerThread(threading.Thread):
                 upper = False
             else:
                 output += x
-            if not x.isalpha() and not x.isnumeric() and x not in set(' \t,":;'):
+            if x.isdigit() and upper:
+                upper = False
+            elif x in set('\t\n.?!'):
                 upper = True
         return output
 
@@ -116,6 +120,7 @@ def translate(text, languages, callback=None, callback_args=None):
     for thread in pool:
         thread.start()
 
+    partial_results = []
     while True:
         result = result_q.get()
         ident, status, args = result
@@ -125,13 +130,15 @@ def translate(text, languages, callback=None, callback_args=None):
                 if thread.ident != ident:
                     thread.join(timeout=0)
                     pool.remove(thread)"""
+            partial_results.append((ident, args))
             if callback and callback_args:
                 callback(callback_args, 'typing')
         elif status == 'result':
             # kill everything and return
             for thread in pool:
                 thread.join(timeout=0)
-            return args
+            trace = [(text, languages[0])] + [y for x, y in partial_results if x == ident]
+            return args, trace
         elif status == 'failed':
             # this thread has reported failure, so kill it.
             for thread in pool:

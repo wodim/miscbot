@@ -1,11 +1,12 @@
 import configparser
+import html
 import logging
 import os
 import random
 import re
 
 from telegram import ChatAction, Update
-from telegram.constants import PARSEMODE_MARKDOWN_V2
+from telegram.constants import PARSEMODE_HTML
 from telegram.ext import CallbackContext, CommandHandler, Filters, MessageHandler, Updater
 from telegram.utils.helpers import escape_markdown
 from wand.image import Image
@@ -70,11 +71,6 @@ def search_fortunes(criteria: str) -> str:
             return
 
 
-def _e(text):
-    """escapes text with markdown v2 syntax"""
-    return escape_markdown(text, 2)
-
-
 def get_username(update: Update) -> str:
     from_user = update.message.from_user.first_name
     try:
@@ -86,7 +82,7 @@ def get_username(update: Update) -> str:
 
 def get_relays() -> dict:
     if relays := _config('chat_relays'):
-        return {int(x): int(y) for x, y in [x.strip().split('|') for x in relays.split(',')]}
+        return {int(x): (int(y), int(z)) for x, y, z in [x.strip().split('|') for x in relays.split(',')]}
     return {}
 
 
@@ -166,8 +162,8 @@ def command_translate(update: Update, context: CallbackContext) -> None:
                                  action=ChatAction.TYPING)
 
     try:
-        translation = translate(text, [lang_from, lang_to],
-                                status_callback, (context, update.message.chat_id))
+        translation, _ = translate(text, [lang_from, lang_to],
+                                   status_callback, (context, update.message.chat_id))
     except Exception as exc:
         update.message.reply_text('Error: ' + str(exc))
         return
@@ -202,8 +198,8 @@ def command_scramble(update: Update, context: CallbackContext) -> None:
                                  action=ChatAction.TYPING)
 
     try:
-        text = translate(text, get_scramble_languages(),
-                         status_callback, (context, update.message.chat_id))
+        text, _ = translate(text, get_scramble_languages(),
+                            status_callback, (context, update.message.chat_id))
     except Exception as exc:
         update.message.reply_text('Error: ' + str(exc))
         return
@@ -239,6 +235,7 @@ def sub_distort(filename: str, params: list) -> str:
     img.resize(w, h)
     img.save(filename='distorted_' + filename)
     img.destroy()
+    img.close()
 
     return 'distorted_' + filename
 
@@ -277,15 +274,9 @@ def command_relay_text(update: Update, context: CallbackContext) -> None:
     message and sends it to the matching relay channel"""
     message_history.push(update.message)
 
-    text = translate(update.message.text, get_scramble_languages())
+    text, trace = translate(update.message.text, get_scramble_languages())
 
-    if message_history.can_post(update.message):
-        message_history.add_relayed_message(
-            update.message,
-            context.bot.send_message(get_relays()[update.message.chat_id],
-                                     '*' + _e(get_username(update) + ':') + '*\n' + _e(ellipsis(text, 3900)),
-                                     parse_mode=PARSEMODE_MARKDOWN_V2, disable_web_page_preview=True)
-        )
+    send_relayed_message(update, context, text, trace=trace)
 
 
 def command_relay_photo(update: Update, context: CallbackContext) -> None:
@@ -297,22 +288,53 @@ def command_relay_photo(update: Update, context: CallbackContext) -> None:
     distorted_filename = sub_distort(filename, ['50'])
 
     try:
-        text = translate(update.message.caption, get_scramble_languages())
-        caption = '*' + _e(get_username(update) + ':') + '*\n' + _e(ellipsis(text, 900))
+        text, trace = translate(update.message.caption, get_scramble_languages())
     except:
-        caption = '*' + _e(get_username(update)) + '*'
+        text, trace = None, None
 
-    if message_history.can_post(update.message):
-        with open(distorted_filename, 'rb') as fp:
-            message_history.add_relayed_message(
-                update.message,
-                context.bot.send_photo(get_relays()[update.message.chat_id],
-                                       fp, caption=caption,
-                                       parse_mode=PARSEMODE_MARKDOWN_V2)
-            )
+    with open(distorted_filename, 'rb') as fp:
+        send_relayed_message(update, context, text, fp, trace)
 
     os.remove(filename)
     os.remove(distorted_filename)
+
+
+def send_relayed_message(update: Update, context: CallbackContext,
+                         text=None, photo_fp=None, trace=None):
+    """sends a message to a relayed channel"""
+    if not message_history.can_post(update.message):
+        return
+
+    relay_channel, trace_channel = get_relays()[update.message.chat_id]
+
+    if trace_channel and trace:
+        trace_text = '\n'.join(['<code>%s</code> %s' % (language, html.escape(text)) for text, language in trace])
+        trace_message = context.bot.send_message(
+            trace_channel,
+            '<b>%s</b>\n%s' % (html.escape(get_username(update)), ellipsis(trace_text, 3900)),
+            parse_mode=PARSEMODE_HTML
+        )
+        message_text = ('<b>%s</b> <a href="%s">[original]</a> <a href="%s">[trace]</a>\n%s' %
+                        (html.escape(get_username(update)), update.message.link, trace_message.link,
+                         html.escape(ellipsis(text, 900 if photo_fp else 3900))))
+    else:
+        message_text = ('<b>%s</b> <a href="%s">[original]</a>\n%s' %
+                        (html.escape(get_username(update)), update.message.link,
+                         html.escape(ellipsis(text, 900 if photo_fp else 3900))))
+
+    if photo_fp:
+        message = context.bot.send_photo(
+            relay_channel,
+            photo_fp, caption=message_text,
+            parse_mode=PARSEMODE_HTML
+        )
+    else:
+        message = context.bot.send_message(
+            relay_channel, message_text,
+            parse_mode=PARSEMODE_HTML, disable_web_page_preview=True
+        )
+
+    message_history.add_relayed_message(update.message, message)
 
 
 message_history = MessageHistory()
