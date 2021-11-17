@@ -177,7 +177,7 @@ def command_translate(update: Update, context: CallbackContext) -> None:
 def get_scramble_languages() -> list[str]:
     """returns a random list of languages to be used by the translator to
     scramble text"""
-    languages = 'ja,he,zh,hi,fi,ru,el'.split(',')
+    languages = [x.strip() for x in _config('scrambler_languages').split(',')]
     random.shuffle(languages)
     languages = ['es'] + languages + ['es']
     return languages
@@ -308,19 +308,19 @@ def send_relayed_message(update: Update, context: CallbackContext,
     relay_channel, trace_channel = get_relays()[update.message.chat_id]
 
     if trace_channel and trace:
-        trace_text = '\n'.join(['<code>%s</code> %s' % (language, html.escape(text)) for text, language in trace])
+        trace_text = '\n'.join(['<code>[%s]</code> %s' % (language, html.escape(text)) for text, language in trace])
         trace_message = context.bot.send_message(
             trace_channel,
             '<b>%s</b>\n%s' % (html.escape(get_username(update)), ellipsis(trace_text, 3900)),
             parse_mode=PARSEMODE_HTML
         )
-        message_text = ('<b>%s</b> <a href="%s">[original]</a> <a href="%s">[trace]</a>\n%s' %
+        message_text = ('<b>%s</b> <a href="%s">[source]</a> <a href="%s">[trace]</a>\n%s' %
                         (html.escape(get_username(update)), update.message.link, trace_message.link,
-                         html.escape(ellipsis(text, 900 if photo_fp else 3900))))
+                         html.escape(ellipsis(text or '', 900 if photo_fp else 3900))))
     else:
-        message_text = ('<b>%s</b> <a href="%s">[original]</a>\n%s' %
+        message_text = ('<b>%s</b> <a href="%s">[source]</a>\n%s' %
                         (html.escape(get_username(update)), update.message.link,
-                         html.escape(ellipsis(text, 900 if photo_fp else 3900))))
+                         html.escape(ellipsis(text or '', 900 if photo_fp else 3900))))
 
     if photo_fp:
         message = context.bot.send_photo(

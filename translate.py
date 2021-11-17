@@ -5,7 +5,9 @@ import random
 import string
 import threading
 import time
+import unicodedata
 
+import emoji
 import requests
 
 
@@ -24,6 +26,8 @@ class WorkerThread(threading.Thread):
         try:
             text, languages = self.translation
             source = languages.pop(0)
+            self.result_q.put((threading.get_ident(), 'partial_result',
+                               (self.clean_up(text), source)))
             for language in languages:
                 text = self.clean_up(text)
                 text = self.translate(text, source, language)
@@ -81,6 +85,8 @@ class WorkerThread(threading.Thread):
         text = text.replace('@ ', '@')
         if text.endswith(';'):
             text = text[:-1] + '?'
+        text = ''.join([unicodedata.name(x) + ' ' if x in emoji.UNICODE_EMOJI['en'] else x
+                        for x in text])
         text = WorkerThread.capitalize(text.strip())
         return text
 
@@ -137,7 +143,7 @@ def translate(text, languages, callback=None, callback_args=None):
             # kill everything and return
             for thread in pool:
                 thread.join(timeout=0)
-            trace = [(text, languages[0])] + [y for x, y in partial_results if x == ident]
+            trace = [y for x, y in partial_results if x == ident]
             return args, trace
         elif status == 'failed':
             # this thread has reported failure, so kill it.

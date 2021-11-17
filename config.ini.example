@@ -3,3 +3,4 @@ token = 123123123:zzzzzzzzzzzzz
 ; format is from|to, from|to
 chat_relays = -100123123123|-100456456456|-100444446446, -100789789789|-100234234234|-100241565634
 chat_relay_delete_channel =
+scrambler_languages = ja, he, zh, hi, fi, ru, el
