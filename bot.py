@@ -8,7 +8,6 @@ import re
 from telegram import ChatAction, Update
 from telegram.constants import PARSEMODE_HTML
 from telegram.ext import CallbackContext, CommandHandler, Filters, MessageHandler, Updater
-from telegram.utils.helpers import escape_markdown
 from wand.image import Image
 
 from message_history import MessageHistory
@@ -102,15 +101,23 @@ def command_fortune(update: Update, context: CallbackContext) -> None:
         msg(get_fortune())
 
 
-def get_tip() -> str:
-    """gets a random tip from the tips.txt file"""
-    with open('tips.txt', 'rt', encoding='utf8') as fp:
+def get_random_line(filename: str) -> str:
+    """gets a random line from the provided file name"""
+    with open(filename, 'rt', encoding='utf8') as fp:
         return random.choice(fp.readlines())
 
 
 def command_tip(update: Update, context: CallbackContext) -> None:
     """handles the /tip command"""
-    context.bot.send_message(update.message.chat_id, get_tip(),
+    context.bot.send_message(update.message.chat_id,
+                             get_random_line('tips.txt'),
+                             disable_web_page_preview=True)
+
+
+def command_oiga(update: Update, context: CallbackContext) -> None:
+    """handles the /oiga command"""
+    context.bot.send_message(update.message.chat_id,
+                             get_random_line('oiga.txt'),
                              disable_web_page_preview=True)
 
 
@@ -287,10 +294,12 @@ def command_relay_photo(update: Update, context: CallbackContext) -> None:
     filename = context.bot.get_file(update.message.photo[-1]).download()
     distorted_filename = sub_distort(filename, ['50'])
 
-    try:
-        text, trace = translate(update.message.caption, get_scramble_languages())
-    except:
-        text, trace = None, None
+    text, trace = None, None
+    if update.message.caption:
+        try:
+            text, trace = translate(update.message.caption, get_scramble_languages())
+        except:
+            pass
 
     with open(distorted_filename, 'rb') as fp:
         send_relayed_message(update, context, text, fp, trace)
@@ -308,7 +317,9 @@ def send_relayed_message(update: Update, context: CallbackContext,
     relay_channel, trace_channel = get_relays()[update.message.chat_id]
 
     if trace_channel and trace:
-        trace_text = '\n'.join(['<code>[%s]</code> %s' % (language, html.escape(text)) for text, language in trace])
+        trace_text = '\n'.join(['<code>[%s]</code> %s' %
+                                (language, html.escape(text) if text else '<i>(failed)</i>')
+                                for text, language in trace])
         trace_message = context.bot.send_message(
             trace_channel,
             '<b>%s</b>\n%s' % (html.escape(get_username(update)), ellipsis(trace_text, 3900)),
@@ -382,6 +393,7 @@ def main() -> None:
     dispatcher.add_handler(CommandHandler('help', command_help))
     dispatcher.add_handler(CommandHandler('fortune', command_fortune))
     dispatcher.add_handler(CommandHandler('tip', command_tip))
+    dispatcher.add_handler(CommandHandler('oiga', command_oiga))
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True))
     dispatcher.add_handler(CommandHandler('scramble', command_scramble, run_async=True))
     dispatcher.add_handler(CommandHandler('distort', command_distort, run_async=True))

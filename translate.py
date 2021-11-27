@@ -17,28 +17,27 @@ class WorkerThread(threading.Thread):
         super().__init__()
         self.result_q = result_q
         self.stop_request = threading.Event()
-        self.translation = translation
+        self.text, self.languages = translation
         self.s = requests.Session()
         self.s.proxies.update(dict(http='http://' + proxy,
                                    https='http://' + proxy))
 
     def run(self):
-        try:
-            text, languages = self.translation
-            source = languages.pop(0)
-            self.result_q.put((threading.get_ident(), 'partial_result',
-                               (self.clean_up(text), source)))
-            for language in languages:
+        source = self.languages.pop(0)
+        text = self.text
+        for language in self.languages:
+            try:
                 text = self.clean_up(text)
+                if self.stop_request.isSet():
+                    return
                 text = self.translate(text, source, language)
                 text = self.clean_up(text)
                 if self.stop_request.isSet():
                     return
-                self.result_q.put((threading.get_ident(), 'partial_result', (text, language)))
+                self.result_q.put((threading.get_ident(), (text, language)))
                 source = language
-            self.result_q.put((threading.get_ident(), 'result', text))
-        except Exception:
-            self.result_q.put((threading.get_ident(), 'failed', None))
+            except Exception:
+                self.result_q.put((threading.get_ident(), (None, language)))
 
     def translate(self, text, lang_from, lang_to):
         url = 'https://mymemory.translated.net/api/ajaxfetch'
@@ -48,7 +47,7 @@ class WorkerThread(threading.Thread):
         for _ in range(5):
             params['de'] = ''.join(random.choices(string.ascii_lowercase + string.digits, k=12)) + '@gmail.com'
             try:
-                response = self.s.get(url, params=params, timeout=5)
+                response = self.s.get(url, params=params, timeout=3)
             except:
                 continue
             try:
@@ -59,7 +58,6 @@ class WorkerThread(threading.Thread):
                 if response.status == 414:
                     # uri too long: we won't recover from this by retrying
                     break
-                print('JSON error, waiting 2 secs:', response.text)
                 time.sleep(2)
         if response is None:
             raise TranslatorException('Failed to decode the JSON')
@@ -126,30 +124,48 @@ def translate(text, languages, callback=None, callback_args=None):
     for thread in pool:
         thread.start()
 
-    partial_results = []
+    results = {}
     while True:
         result = result_q.get()
-        ident, status, args = result
-        if status == 'partial_result':
-            # we got a partial result, so kill every other thread.
-            """for thread in pool:
-                if thread.ident != ident:
-                    thread.join(timeout=0)
-                    pool.remove(thread)"""
-            partial_results.append((ident, args))
-            if callback and callback_args:
-                callback(callback_args, 'typing')
-        elif status == 'result':
-            # kill everything and return
+        ident, args = result
+        text_, _ = args
+
+        if callback and callback_args:
+            # send back a typing notification
+            callback(callback_args, 'typing')
+
+        if ident not in results:
+            results[ident] = [(WorkerThread.clean_up(text), languages[0])]
+        results[ident].append(args)
+
+        if len(results[ident]) != len(languages):
+            # this thread hasn't finished its job yet.
+            continue
+
+        # we have finished, so stop and remove this thread from the pool
+        for thread in pool:
+            if thread.ident == ident:
+                thread.join(timeout=0)
+                pool.remove(thread)
+                break
+
+        # check if all translations made by this thread succeeded
+        if all((x for x, _ in results[ident])):
+            # if that is the case, kill the rest of threads and return early.
             for thread in pool:
                 thread.join(timeout=0)
-            trace = [y for x, y in partial_results if x == ident]
-            return args, trace
-        elif status == 'failed':
-            # this thread has reported failure, so kill it.
-            for thread in pool:
-                if thread.ident == ident:
-                    thread.join(timeout=0)
-                    pool.remove(thread)
-            if len(pool) == 0:
+            return text_, results[ident]
+
+        if len(pool) == 0:
+            # there are no more threads left, so pick the best translation
+            # available. first we have to remove threads that failed to
+            # translate back to the source language.
+            valid = [x for x in results.values() if x[-1][0]]
+            # if there are no valid translations, bail out.
+            if not valid:
                 raise TranslatorException('All threads died and not one of them could come up with an answer. Try again.')
+            # then sort the results by the amount of translations done and
+            # return the results of the thread that managed to perform a
+            # greater amount of translations.
+            best = sorted(valid, key=lambda ident: len([x for x, _ in ident if x]), reverse=True)
+            return best[0][-1][0], best[0]
