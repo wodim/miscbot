@@ -2,8 +2,10 @@ import configparser
 import html
 import logging
 import os
+import pickle
 import random
 import re
+import threading
 
 from telegram import ChatAction, Update
 from telegram.constants import PARSEMODE_HTML
@@ -16,6 +18,8 @@ from translate import translate
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+log_semaphore = threading.Semaphore()
 
 
 def _config(k: str) -> str:
@@ -126,9 +130,9 @@ def command_help(update: Update, _: CallbackContext) -> None:
     update.message.reply_text('I have nothing to say to you.')
 
 
-rx_multi_lang = re.compile(r'^([a-z]{2})\-([a-z]{2})(\s|$)', re.IGNORECASE)
-rx_single_lang = re.compile(r'^([a-z]{2})(\s|$)', re.IGNORECASE)
-translate_usage = """Usage:
+RX_MULTI_LANG = re.compile(r'^([a-z]{2})\-([a-z]{2})(\s|$)', re.IGNORECASE)
+RX_SINGLE_LANG = re.compile(r'^([a-z]{2})(\s|$)', re.IGNORECASE)
+TRANSLATE_USAGE = """Usage:
 /translate es-en Text to translate
 /translate en Text to translate (source language defaults to Spanish)
 /translate Text to translate (source defaults to Spanish; destination defaults to English)
@@ -142,27 +146,27 @@ def command_translate(update: Update, context: CallbackContext) -> None:
     elif context.args:
         text = remove_command(update.message.text)
     else:
-        update.message.reply_text(translate_usage)
+        update.message.reply_text(TRANSLATE_USAGE)
         return
 
     lang_from, lang_to = 'es', 'en'
     if not context.args:
         # there are no parameters to the command so use default options
         pass
-    elif matches := rx_multi_lang.match(remove_command(update.message.text)):
+    elif matches := RX_MULTI_LANG.match(remove_command(update.message.text)):
         lang_from, lang_to = matches[1], matches[2]
-        text = rx_multi_lang.sub('', text)
-    elif matches := rx_single_lang.match(remove_command(update.message.text)):
+        text = RX_MULTI_LANG.sub('', text)
+    elif matches := RX_SINGLE_LANG.match(remove_command(update.message.text)):
         if context.args[0] != 'el':
             lang_from, lang_to = 'es', matches[1]
-            text = rx_single_lang.sub('', text)
+            text = RX_SINGLE_LANG.sub('', text)
 
     if lang_from == lang_to:
         update.message.reply_text("Source and destination languages can't be the same.")
         return
 
     if not text.strip():
-        update.message.reply_text(translate_usage)
+        update.message.reply_text(TRANSLATE_USAGE)
         return
 
     context.bot.send_chat_action(chat_id=update.message.chat_id,
@@ -186,7 +190,7 @@ def get_scramble_languages() -> list[str]:
     scramble text"""
     languages = [x.strip() for x in _config('scrambler_languages').split(',')]
     random.shuffle(languages)
-    languages = ['es'] + languages + ['es']
+    languages = ['es'] + languages[:int(_config('scrambler_languages_count'))] + ['es']
     return languages
 
 
@@ -218,7 +222,7 @@ def command_scramble(update: Update, context: CallbackContext) -> None:
 
 
 def sub_distort(filename: str, params: list) -> str:
-    """distorts an image and parses the distortion parameters. returns
+    """parses the distortion parameters and distorts an image. returns
     the file name of the distorted image."""
     scale = 25
     dimension = '*'
@@ -308,6 +312,12 @@ def command_relay_photo(update: Update, context: CallbackContext) -> None:
     os.remove(distorted_filename)
 
 
+def get_language_code(code):
+    """formats a zz or zz-yy language code to be displayed in traces"""
+    shortcode = code.split('-')[0] if '-' in code else code
+    fmt = '[%s]' if len(shortcode) == 2 else '%s]'
+    return fmt % shortcode
+
 def send_relayed_message(update: Update, context: CallbackContext,
                          text=None, photo_fp=None, trace=None):
     """sends a message to a relayed channel"""
@@ -317,8 +327,8 @@ def send_relayed_message(update: Update, context: CallbackContext,
     relay_channel, trace_channel = get_relays()[update.message.chat_id]
 
     if trace_channel and trace:
-        trace_text = '\n'.join(['<code>[%s]</code> %s' %
-                                (language, html.escape(text) if text else '<i>(failed)</i>')
+        trace_text = '\n'.join(['<code>%s</code> %s' % (get_language_code(language),
+                                                        html.escape(text) if text else '<i>(failed)</i>')
                                 for text, language in trace])
         trace_message = context.bot.send_message(
             trace_channel,
@@ -363,7 +373,8 @@ def cron_delete(_: CallbackContext) -> None:
             except:
                 try:
                     # try to remove the relayed message
-                    message.relayed_message.delete()
+                    for relayed_message in message.relayed_messages:
+                        relayed_message.delete()
                 except:
                     # failed, so the message wasn't relayed yet
                     # prevent the bot from posting the relayed message
@@ -376,8 +387,17 @@ def cron_delete(_: CallbackContext) -> None:
 
 
 def status_callback(callback_args: tuple, status: str) -> None:
+    """callback used by the translator to send typing notifications"""
     context, chat_id = callback_args
     context.bot.send_chat_action(chat_id=chat_id, action=status)
+
+
+def command_log(update: Update, _: CallbackContext) -> None:
+    """logs a pickled representation of every update message to a file"""
+    with log_semaphore:
+        with open('log.pickle', 'ab') as fp:
+            pickle.dump(update.to_dict(), fp)
+            fp.write(b'\xff\x00__SENTINEL__\x00\xff')
 
 
 def main() -> None:
@@ -414,7 +434,7 @@ def main() -> None:
     dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.photo & Filters.update.message,
                                           command_relay_photo, run_async=True), group=1)
 
-    # dispatcher.add_handler(MessageHandler(Filters.text & Filters.chat_type.groups, command_check))
+    dispatcher.add_handler(MessageHandler(Filters.chat_type.groups, command_log, run_async=True))
 
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 

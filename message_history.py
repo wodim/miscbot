@@ -17,7 +17,9 @@ class MessageHistory:
 
     def add_relayed_message(self, message, relayed_message):
         try:
-            self.history[message.chat_id][self.history[message.chat_id].index(message)].relayed_message = relayed_message
+            self.history[message.chat_id][self.history[message.chat_id].index(message)].relayed_messages.append(relayed_message)
+        except AttributeError:
+            self.history[message.chat_id][self.history[message.chat_id].index(message)].relayed_messages = [relayed_message]
         except ValueError:
             pass
         self.gc(message.chat_id)

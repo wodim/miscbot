@@ -1,5 +1,6 @@
 import html
 import json
+import logging
 import queue
 import random
 import string
@@ -9,6 +10,10 @@ import unicodedata
 
 import emoji
 import requests
+
+
+logging.basicConfig(format='%(asctime)s - %(name)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 # https://eli.thegreenplace.net/2011/12/27/python-threads-communication-and-stopping
@@ -36,7 +41,8 @@ class WorkerThread(threading.Thread):
                     return
                 self.result_q.put((threading.get_ident(), (text, language)))
                 source = language
-            except Exception:
+            except Exception as exc:
+                logger.info('Error translating from %s to %s: %s', source, language, exc)
                 self.result_q.put((threading.get_ident(), (None, language)))
 
     def translate(self, text, lang_from, lang_to):
@@ -72,7 +78,7 @@ class WorkerThread(threading.Thread):
                                       decoded_json['responseStatus'])
 
         if len(translation.strip()) == 0:
-            raise TranslatorException('Unsupported language')
+            raise TranslatorException('Empty translation received')
 
         return translation
 
@@ -163,6 +169,7 @@ def translate(text, languages, callback=None, callback_args=None):
             valid = [x for x in results.values() if x[-1][0]]
             # if there are no valid translations, bail out.
             if not valid:
+                logger.info('Gave up on this translation')
                 raise TranslatorException('All threads died and not one of them could come up with an answer. Try again.')
             # then sort the results by the amount of translations done and
             # return the results of the thread that managed to perform a
