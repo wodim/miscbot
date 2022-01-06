@@ -1,6 +1,13 @@
 [bot]
 token = 123123123:zzzzzzzzzzzzz
-; format is from|to, from|to
+; format is from|to|trace, from|to|trace, ...
 chat_relays = -100123123123|-100456456456|-100444446446, -100789789789|-100234234234|-100241565634
 chat_relay_delete_channel =
+; all languages available to be used in /translate
+all_languages = mr, ha, de, hmn, ig, mk, cy, af, hu, gd, da, sn, ur, ja, tk
+; of those languages, which ones does the scrambler use
 scrambler_languages = ja, he, zh, hi, fi, ru, el
+; how many languages do scrambled messages go through
+scrambler_languages_count = 12
+; this is the default output language used by the translator
+default_language = es

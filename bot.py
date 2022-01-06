@@ -7,19 +7,18 @@ import random
 import re
 import threading
 
-from telegram import ChatAction, Update
+from telegram import Bot, ChatAction, Update
 from telegram.constants import PARSEMODE_HTML
 from telegram.ext import CallbackContext, CommandHandler, Filters, MessageHandler, Updater
 from wand.image import Image
 
+from actions import Actions
 from message_history import MessageHistory
 from translate import translate
 
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-log_semaphore = threading.Semaphore()
 
 
 def _config(k: str) -> str:
@@ -75,12 +74,10 @@ def search_fortunes(criteria: str) -> str:
 
 
 def get_username(update: Update) -> str:
-    from_user = update.message.from_user.first_name
-    try:
-        from_user += ' ' + update.message.from_user.last_name
-    except:
-        pass
-    return from_user
+    if update.message.from_user.last_name:
+        return '%s %s' % (update.message.from_user.first_name,
+                          update.message.from_user.last_name)
+    return update.message.from_user.first_name
 
 
 def get_relays() -> dict:
@@ -130,26 +127,39 @@ def command_help(update: Update, _: CallbackContext) -> None:
     update.message.reply_text('I have nothing to say to you.')
 
 
+def sub_translate(text, languages):
+    """translate, or else"""
+    while True:
+        try:
+            return translate(text, languages)
+        except:
+            pass
+
+
 RX_MULTI_LANG = re.compile(r'^([a-z]{2})\-([a-z]{2})(\s|$)', re.IGNORECASE)
 RX_SINGLE_LANG = re.compile(r'^([a-z]{2})(\s|$)', re.IGNORECASE)
-TRANSLATE_USAGE = """Usage:
-/translate es-en Text to translate
-/translate en Text to translate (source language defaults to Spanish)
-/translate Text to translate (source defaults to Spanish; destination defaults to English)
-Text to translate can be omitted if you quote another message."""
+TRANSLATE_USAGE = """<b>Usage</b>
+/translate en-es <i>Text to translate</i>
+/translate es <i>Text to translate</i> (source language is detected automatically)
+/translate <i>Text to translate</i> (source language is detected automatically; target defaults to <b>%s</b>)
+<i>Text to translate</i> can be omitted if you quote another message.
+
+<b>Supported languages</b>
+"""
 def command_translate(update: Update, context: CallbackContext) -> None:
     """handles the /translate command. somewhat complex because of all the cases
-    it needs to handle: omitting destination or both languages, translating quoted
+    it needs to handle: omitting target or both languages, translating quoted
     messages..."""
-    if update.message.reply_to_message and update.message.reply_to_message.text:
-        text = update.message.reply_to_message.text.strip()
+    text = None
+    if update.message.reply_to_message:
+        if update.message.reply_to_message.text:
+            text = update.message.reply_to_message.text.strip()
+        elif update.message.reply_to_message.caption:
+            text = update.message.reply_to_message.caption.strip()
     elif context.args:
         text = remove_command(update.message.text)
-    else:
-        update.message.reply_text(TRANSLATE_USAGE)
-        return
 
-    lang_from, lang_to = 'es', 'en'
+    lang_from, lang_to = 'auto', _config('default_language')
     if not context.args:
         # there are no parameters to the command so use default options
         pass
@@ -157,27 +167,37 @@ def command_translate(update: Update, context: CallbackContext) -> None:
         lang_from, lang_to = matches[1], matches[2]
         text = RX_MULTI_LANG.sub('', text)
     elif matches := RX_SINGLE_LANG.match(remove_command(update.message.text)):
-        if context.args[0] != 'el':
-            lang_from, lang_to = 'es', matches[1]
-            text = RX_SINGLE_LANG.sub('', text)
+        lang_from, lang_to = 'auto', matches[1]
+        text = RX_SINGLE_LANG.sub('', text)
 
     if lang_from == lang_to:
-        update.message.reply_text("Source and destination languages can't be the same.")
+        update.message.reply_text("Source and target languages can't be the same.")
         return
 
-    if not text.strip():
-        update.message.reply_text(TRANSLATE_USAGE)
+    all_languages = sorted([x.strip() for x in _config('all_languages').split(',')])
+
+    if lang_from not in all_languages + ['auto']:
+        update.message.reply_text('Invalid source language "%s" provided.' % lang_from)
+        return
+    if lang_to not in all_languages:
+        update.message.reply_text('Invalid target language "%s" provided.' % lang_to)
         return
 
-    context.bot.send_chat_action(chat_id=update.message.chat_id,
-                                 action=ChatAction.TYPING)
+    if not text or not text.strip():
+        update.message.reply_text((TRANSLATE_USAGE % _config('default_language')
+                                   + ', '.join(all_languages)),
+                                  parse_mode=PARSEMODE_HTML)
+        return
+
+    actions.append(update.message.chat_id, ChatAction.TYPING)
 
     try:
-        translation, _ = translate(text, [lang_from, lang_to],
-                                   status_callback, (context, update.message.chat_id))
+        translation, _ = sub_translate(text, [lang_from, lang_to])
     except Exception as exc:
         update.message.reply_text('Error: ' + str(exc))
         return
+    finally:
+        actions.remove(update.message.chat_id, ChatAction.TYPING)
 
     if update.message.reply_to_message:
         update.message.reply_to_message.reply_text(ellipsis(translation, 4000))
@@ -190,14 +210,19 @@ def get_scramble_languages() -> list[str]:
     scramble text"""
     languages = [x.strip() for x in _config('scrambler_languages').split(',')]
     random.shuffle(languages)
-    languages = ['es'] + languages[:int(_config('scrambler_languages_count'))] + ['es']
-    return languages
+    return (['auto'] +
+            languages[:int(_config('scrambler_languages_count'))] +
+            [_config('default_language')])
 
 
-def command_scramble(update: Update, context: CallbackContext) -> None:
+def command_scramble(update: Update, _: CallbackContext) -> None:
     """handles the /scramble command."""
-    if update.message.reply_to_message and update.message.reply_to_message.text:
-        text = update.message.reply_to_message.text.strip()
+    text = None
+    if update.message.reply_to_message:
+        if update.message.reply_to_message.text:
+            text = update.message.reply_to_message.text.strip()
+        elif update.message.reply_to_message.caption:
+            text = update.message.reply_to_message.caption.strip()
     elif update.message.text:
         text = remove_command(update.message.text)
 
@@ -205,15 +230,15 @@ def command_scramble(update: Update, context: CallbackContext) -> None:
         update.message.reply_text('Scramble what? Type or quote something.')
         return
 
-    context.bot.send_chat_action(chat_id=update.message.chat_id,
-                                 action=ChatAction.TYPING)
+    actions.append(update.message.chat_id, ChatAction.TYPING)
 
     try:
-        text, _ = translate(text, get_scramble_languages(),
-                            status_callback, (context, update.message.chat_id))
+        text, _ = sub_translate(text, get_scramble_languages())
     except Exception as exc:
         update.message.reply_text('Error: ' + str(exc))
         return
+    finally:
+        actions.remove(update.message.chat_id, ChatAction.TYPING)
 
     if update.message.reply_to_message:
         update.message.reply_to_message.reply_text(ellipsis(text, 4000))
@@ -221,6 +246,7 @@ def command_scramble(update: Update, context: CallbackContext) -> None:
         update.message.reply_text(ellipsis(text, 4000))
 
 
+distort_semaphore = threading.Semaphore()
 def sub_distort(filename: str, params: list) -> str:
     """parses the distortion parameters and distorts an image. returns
     the file name of the distorted image."""
@@ -236,23 +262,24 @@ def sub_distort(filename: str, params: list) -> str:
     if not 0 < scale < 100:
         scale = 25
 
-    img = Image(filename=filename)
-    w, h = img.width, img.height
-    # img.resize(int(w * (1 + scale / 100)), int(h * (1 + scale / 100)))
-    # img.liquid_rescale(w, h)
-    new_w = int(w * (1 - scale / 100)) if dimension in ('*', 'w') else w
-    new_h = int(h * (1 - scale / 100)) if dimension in ('*', 'h') else h
-    img.liquid_rescale(new_w, new_h)
-    img.resize(w, h)
-    img.save(filename='distorted_' + filename)
-    img.destroy()
-    img.close()
+    with distort_semaphore:
+        img = Image(filename=filename)
+        w, h = img.width, img.height
+        new_w = int(w * (1 + scale / 100)) if dimension in ('*', 'w') else w
+        new_h = int(h * (1 + scale / 100)) if dimension in ('*', 'h') else h
+        img.resize(new_w, new_h)
+        img.liquid_rescale(w, h)
+        img.save(filename='distorted_' + filename)
+        img.destroy()
+        img.close()
 
     return 'distorted_' + filename
 
 
 def command_distort(update: Update, context: CallbackContext) -> None:
     """handles the /distort command"""
+    actions.append(update.message.chat_id, ChatAction.UPLOAD_PHOTO)
+
     if update.message.photo:
         filename = context.bot.get_file(update.message.photo[-1]).download()
         text = update.message.caption or ''
@@ -267,6 +294,8 @@ def command_distort(update: Update, context: CallbackContext) -> None:
 
     with open(distorted_filename, 'rb') as fp:
         update.message.reply_photo(fp)
+
+    actions.remove(update.message.chat_id, ChatAction.UPLOAD_PHOTO)
 
     os.remove(filename)
     os.remove(distorted_filename)
@@ -285,7 +314,7 @@ def command_relay_text(update: Update, context: CallbackContext) -> None:
     message and sends it to the matching relay channel"""
     message_history.push(update.message)
 
-    text, trace = translate(update.message.text, get_scramble_languages())
+    text, trace = sub_translate(update.message.text, get_scramble_languages())
 
     send_relayed_message(update, context, text, trace=trace)
 
@@ -301,7 +330,7 @@ def command_relay_photo(update: Update, context: CallbackContext) -> None:
     text, trace = None, None
     if update.message.caption:
         try:
-            text, trace = translate(update.message.caption, get_scramble_languages())
+            text, trace = sub_translate(update.message.caption, get_scramble_languages())
         except:
             pass
 
@@ -314,9 +343,8 @@ def command_relay_photo(update: Update, context: CallbackContext) -> None:
 
 def get_language_code(code):
     """formats a zz or zz-yy language code to be displayed in traces"""
-    shortcode = code.split('-')[0] if '-' in code else code
-    fmt = '[%s]' if len(shortcode) == 2 else '%s]'
-    return fmt % shortcode
+    return '%4s ' % (code.split('-')[0] if '-' in code else code)
+
 
 def send_relayed_message(update: Update, context: CallbackContext,
                          text=None, photo_fp=None, trace=None):
@@ -326,14 +354,14 @@ def send_relayed_message(update: Update, context: CallbackContext,
 
     relay_channel, trace_channel = get_relays()[update.message.chat_id]
 
-    if trace_channel and trace:
-        trace_text = '\n'.join(['<code>%s</code> %s' % (get_language_code(language),
-                                                        html.escape(text) if text else '<i>(failed)</i>')
+    if trace and trace_channel and trace_channel != 0:
+        trace_text = '\n'.join(['<code>%s</code>%s' % (get_language_code(language),
+                                                       html.escape(text) if text else '<i>(failed)</i>')
                                 for text, language in trace])
         trace_message = context.bot.send_message(
             trace_channel,
             '<b>%s</b>\n%s' % (html.escape(get_username(update)), ellipsis(trace_text, 3900)),
-            parse_mode=PARSEMODE_HTML
+            parse_mode=PARSEMODE_HTML, disable_web_page_preview=True
         )
         message_text = ('<b>%s</b> <a href="%s">[source]</a> <a href="%s">[trace]</a>\n%s' %
                         (html.escape(get_username(update)), update.message.link, trace_message.link,
@@ -356,9 +384,6 @@ def send_relayed_message(update: Update, context: CallbackContext,
         )
 
     message_history.add_relayed_message(update.message, message)
-
-
-message_history = MessageHistory()
 
 
 def cron_delete(_: CallbackContext) -> None:
@@ -386,12 +411,7 @@ def cron_delete(_: CallbackContext) -> None:
                 pass
 
 
-def status_callback(callback_args: tuple, status: str) -> None:
-    """callback used by the translator to send typing notifications"""
-    context, chat_id = callback_args
-    context.bot.send_chat_action(chat_id=chat_id, action=status)
-
-
+log_semaphore = threading.Semaphore()
 def command_log(update: Update, _: CallbackContext) -> None:
     """logs a pickled representation of every update message to a file"""
     with log_semaphore:
@@ -400,10 +420,13 @@ def command_log(update: Update, _: CallbackContext) -> None:
             fp.write(b'\xff\x00__SENTINEL__\x00\xff')
 
 
-def main() -> None:
-    """Start the bot."""
+if __name__ == '__main__':
     # Create the Updater and pass it your bot's token.
-    updater = Updater(_config('token'))
+    bot = Bot(_config('token'))
+    updater = Updater(bot=bot)
+
+    message_history = MessageHistory()
+    actions = Actions(bot)
 
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
@@ -438,6 +461,8 @@ def main() -> None:
 
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
+    dispatcher.job_queue.run_repeating(actions.cron, interval=4)
+
     # Start the Bot
     updater.start_polling()
 
@@ -445,7 +470,3 @@ def main() -> None:
     # SIGTERM or SIGABRT. This should be used most of the time, since
     # start_polling() is non-blocking and will stop the bot gracefully.
     updater.idle()
-
-
-if __name__ == '__main__':
-    main()

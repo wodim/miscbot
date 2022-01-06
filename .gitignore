@@ -3,8 +3,9 @@
 /*.jpg
 /trolldb.txt
 /proxies.txt
-templates
-log.pickle
-stats.py
-import.py
-*.json
+/templates
+/log.pickle
+/stats.py
+/import.py
+/*.json
+/parser.py

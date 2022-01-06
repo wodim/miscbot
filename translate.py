@@ -2,10 +2,7 @@ import html
 import json
 import logging
 import queue
-import random
-import string
 import threading
-import time
 import unicodedata
 
 import emoji
@@ -16,6 +13,10 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(message)s', level=logging
 logger = logging.getLogger(__name__)
 
 
+class TranslatorException(Exception): pass
+class UnrecoverableTranslatorException(Exception): pass
+
+
 # https://eli.thegreenplace.net/2011/12/27/python-threads-communication-and-stopping
 class WorkerThread(threading.Thread):
     def __init__(self, result_q, proxy, translation):
@@ -23,9 +24,9 @@ class WorkerThread(threading.Thread):
         self.result_q = result_q
         self.stop_request = threading.Event()
         self.text, self.languages = translation
-        self.s = requests.Session()
-        self.s.proxies.update(dict(http='http://' + proxy,
-                                   https='http://' + proxy))
+        self.session = requests.Session()
+        self.session.proxies.update(dict(http='http://' + proxy,
+                                         https='http://' + proxy))
 
     def run(self):
         source = self.languages.pop(0)
@@ -41,41 +42,32 @@ class WorkerThread(threading.Thread):
                     return
                 self.result_q.put((threading.get_ident(), (text, language)))
                 source = language
-            except Exception as exc:
-                logger.info('Error translating from %s to %s: %s', source, language, exc)
+            except:
+                # logger.info('Error translating "%s" from %s to %s', text, source, language)
                 self.result_q.put((threading.get_ident(), (None, language)))
 
     def translate(self, text, lang_from, lang_to):
-        url = 'https://mymemory.translated.net/api/ajaxfetch'
-        params = {'q': text, 'langpair': lang_from + '|' + lang_to, 'mtonly': '1'}
+        url = ('https://translate.googleapis.com/translate_a/single?client=gtx&'
+               'dt=t&ie=UTF-8&oe=UTF-8&otf=1&ssel=0&tsel=0&kc=7&dt=at&dt=bd&'
+               'dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss')
+        params = {'q': text, 'sl': lang_from, 'tl': lang_to}
 
         response = None
-        for _ in range(5):
-            params['de'] = ''.join(random.choices(string.ascii_lowercase + string.digits, k=12)) + '@gmail.com'
+        for _ in range(3):
             try:
-                response = self.s.get(url, params=params, timeout=3)
+                response = self.session.get(url, params=params, timeout=5)
             except:
                 continue
-            try:
-                decoded_json = json.loads(response.text)
-                translation = decoded_json['responseData']['translatedText']
-                break
-            except:
-                if response.status == 414:
-                    # uri too long: we won't recover from this by retrying
-                    break
-                time.sleep(2)
         if response is None:
-            raise TranslatorException('Failed to decode the JSON')
+            raise TranslatorException('This proxy failed miserably')
 
-        if decoded_json['responseStatus'] != 200:
-            if 'IS AN INVALID TARGET LANGUAGE' in translation:
-                raise TranslatorException('Incorrect language (%s)' %
-                                          decoded_json['responseStatus'])
-            if decoded_json['responseStatus'] == 429:
-                raise TranslatorException("I'm out of quota by now")
-            raise TranslatorException('Response code not ok (%s)' %
-                                      decoded_json['responseStatus'])
+        if response.status_code == 429:
+            raise TranslatorException("I'm out of quota by now")
+        elif response.status_code == 400:
+            raise UnrecoverableTranslatorException('You screwed up')
+
+        translation = ' '.join([str(x[0]) for x in
+                                json.loads(response.text)[0] if x[0]])
 
         if len(translation.strip()) == 0:
             raise TranslatorException('Empty translation received')
@@ -87,8 +79,6 @@ class WorkerThread(threading.Thread):
         text = html.unescape(text)
         text = '\n'.join([x.strip() for x in text.split('\n')])
         text = text.replace('@ ', '@')
-        if text.endswith(';'):
-            text = text[:-1] + '?'
         text = ''.join([unicodedata.name(x) + ' ' if x in emoji.UNICODE_EMOJI['en'] else x
                         for x in text])
         text = WorkerThread.capitalize(text.strip())
@@ -98,15 +88,15 @@ class WorkerThread(threading.Thread):
     def capitalize(text):
         upper = True
         output = ''
-        for x in text.lower():
-            if x.isalpha() and upper:
-                output += x.upper()
+        for char in text.lower():
+            if char.isalpha() and upper:
+                output += char.upper()
                 upper = False
             else:
-                output += x
-            if x.isdigit() and upper:
+                output += char
+            if char.isdigit() and upper:
                 upper = False
-            elif x in set('\t\n.?!'):
+            elif char in set('\t\n.?!'):
                 upper = True
         return output
 
@@ -115,11 +105,7 @@ class WorkerThread(threading.Thread):
         super().join(timeout)
 
 
-class TranslatorException(Exception):
-    pass
-
-
-def translate(text, languages, callback=None, callback_args=None):
+def translate(text, languages):
     result_q = queue.Queue()
 
     with open('proxies.txt', 'rt', encoding='utf8') as fp:
@@ -135,10 +121,6 @@ def translate(text, languages, callback=None, callback_args=None):
         result = result_q.get()
         ident, args = result
         text_, _ = args
-
-        if callback and callback_args:
-            # send back a typing notification
-            callback(callback_args, 'typing')
 
         if ident not in results:
             results[ident] = [(WorkerThread.clean_up(text), languages[0])]
@@ -170,7 +152,7 @@ def translate(text, languages, callback=None, callback_args=None):
             # if there are no valid translations, bail out.
             if not valid:
                 logger.info('Gave up on this translation')
-                raise TranslatorException('All threads died and not one of them could come up with an answer. Try again.')
+                raise TranslatorException("With this translator's failure, the thread of prophecy is severed. Issue the same command again to restore the weave of fate, or persist in the doomed, untranslated world you have created.")
             # then sort the results by the amount of translations done and
             # return the results of the thread that managed to perform a
             # greater amount of translations.
