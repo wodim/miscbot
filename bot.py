@@ -1,4 +1,3 @@
-import configparser
 import html
 import logging
 import os
@@ -13,118 +12,14 @@ from telegram.ext import CallbackContext, CommandHandler, Filters, MessageHandle
 from wand.image import Image
 
 from actions import Actions
+from commands_text import command_fortune, command_tip, command_oiga, command_help
 from message_history import MessageHistory
 from translate import translate
+from utils import _config, ellipsis, get_relays, get_username, remove_command
 
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-def _config(k: str) -> str:
-    """returns a configuration value from the config file or None if it does
-    not exist"""
-    config = configparser.ConfigParser()
-    config.read('config.ini')
-    try:
-        return config['bot'][k]
-    except:
-        return None
-
-
-def ellipsis(text: str, max_: int) -> str:
-    """truncates text to a max of max_ characters"""
-    return text[:max_ - 1] + '…' if len(text) > max_ else text
-
-
-def clean_fortune(fortune: str) -> str:
-    """fixes the odd whitespace that fortunes have"""
-    return fortune.replace(' \n', ' ').replace('  ', '\n').strip()
-
-
-rx_command = re.compile(r'^/[a-z0-9_]+(@[a-z0-9_]+bot)?\b', re.IGNORECASE)
-def remove_command(message: str) -> str:
-    """removes /command or /command@my_bot from the message"""
-    return rx_command.sub('', message).strip()
-
-
-def get_fortune() -> str:
-    """gets a fortune at random and cleans it"""
-    with open('trolldb.txt', 'rt', encoding='utf8') as fp:
-        fortunes = fp.read().split('%')[:-1]
-    fortune = clean_fortune(random.choice(fortunes))
-    return fortune
-
-
-MAX_FORTUNE_RESULTS = 5
-def search_fortunes(criteria: str) -> str:
-    """searches the fortune database for fortunes that match the criteria and
-    returns them and then None if there are more results"""
-    with open('trolldb.txt', 'rt', encoding='utf8') as fp:
-        fortunes = fp.read().split('%')[:-1]
-    results = 0
-    for fortune in fortunes:
-        clean = clean_fortune(fortune)
-        if criteria.lower() in clean.lower():
-            results += 1
-            yield clean
-        if results >= MAX_FORTUNE_RESULTS:
-            yield None
-            return
-
-
-def get_username(update: Update) -> str:
-    if update.message.from_user.last_name:
-        return '%s %s' % (update.message.from_user.first_name,
-                          update.message.from_user.last_name)
-    return update.message.from_user.first_name
-
-
-def get_relays() -> dict:
-    if relays := _config('chat_relays'):
-        return {int(x): (int(y), int(z)) for x, y, z in [x.strip().split('|') for x in relays.split(',')]}
-    return {}
-
-
-def command_fortune(update: Update, context: CallbackContext) -> None:
-    """handles the /fortune command, which prints a random fortune or a list of
-    a max of MAX_FORTUNE_RESULTS that match the parameter"""
-    def msg(text):
-        context.bot.send_message(update.message.chat_id, ellipsis(text, 4000),
-                                 disable_web_page_preview=True)
-    if context.args:
-        if fortunes := list(search_fortunes(' '.join(context.args))):
-            for fortune in fortunes:
-                msg(fortune if fortune else 'Too many results. I only showed the first %d.' % MAX_FORTUNE_RESULTS)
-        else:
-            msg('No results.')
-    else:
-        msg(get_fortune())
-
-
-def get_random_line(filename: str) -> str:
-    """gets a random line from the provided file name"""
-    with open(filename, 'rt', encoding='utf8') as fp:
-        return random.choice(fp.readlines())
-
-
-def command_tip(update: Update, context: CallbackContext) -> None:
-    """handles the /tip command"""
-    context.bot.send_message(update.message.chat_id,
-                             get_random_line('tips.txt'),
-                             disable_web_page_preview=True)
-
-
-def command_oiga(update: Update, context: CallbackContext) -> None:
-    """handles the /oiga command"""
-    context.bot.send_message(update.message.chat_id,
-                             get_random_line('oiga.txt'),
-                             disable_web_page_preview=True)
-
-
-def command_help(update: Update, _: CallbackContext) -> None:
-    """handles the /start and /help commands."""
-    update.message.reply_text('I have nothing to say to you.')
 
 
 def sub_translate(text, languages):
