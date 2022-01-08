@@ -11,3 +11,15 @@ scrambler_languages = ja, he, zh, hi, fi, ru, el
 scrambler_languages_count = 12
 ; this is the default output language used by the translator
 default_language = es
+; chat ids of admins who can use /restart
+admins = 123123123
+; file id for the gif that is sent to those who use /restart with no privileges
+; or those who send garbage to the bot in private
+error_animation = CgACAgQAAxkBAAJmjmHYLeMwbHUxlUFKrtrYNZibph2yAAJ1AgACG2CVUljvmKgkpICWIwQ
+; file id for the gif that is sent when the bot is brought back to life
+restart_animation = CgACAgQAAxkBAAJnXWHaBNqU2EELROLed0alvigmKjLCAALiCgAC84HQUm-vp5donIGiIwQ
+stats_url = http://2.vortigaunt.net/CHAT_ID.html
+; these are used by the translate module: how many times a single request is retried,
+; and the timeout for every one of those requests
+translate_http_retries = 3
+translate_http_timeout = 3

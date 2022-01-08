@@ -1,25 +1,24 @@
 import html
-import logging
 import os
 import pickle
+import pprint
 import random
 import re
+import signal
 import threading
 
 from telegram import Bot, ChatAction, Update
 from telegram.constants import PARSEMODE_HTML
 from telegram.ext import CallbackContext, CommandHandler, Filters, MessageHandler, Updater
+from telegram.utils.request import Request
 from wand.image import Image
 
 from actions import Actions
-from commands_text import command_fortune, command_tip, command_oiga, command_help
+from commands_text import command_fortune, command_tip, command_oiga
 from message_history import MessageHistory
-from translate import translate
-from utils import _config, ellipsis, get_relays, get_username, remove_command
-
-
-logging.basicConfig(format='%(asctime)s - %(name)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
+from translate import TranslateWorkerThread, translate
+from utils import (_config, ellipsis, get_command_args, get_relays, get_username,
+                   is_admin, remove_command)
 
 
 def sub_translate(text, languages):
@@ -34,8 +33,8 @@ def sub_translate(text, languages):
 RX_MULTI_LANG = re.compile(r'^([a-z]{2})\-([a-z]{2})(\s|$)', re.IGNORECASE)
 RX_SINGLE_LANG = re.compile(r'^([a-z]{2})(\s|$)', re.IGNORECASE)
 TRANSLATE_USAGE = """<b>Usage</b>
-/translate en-es <i>Text to translate</i>
-/translate es <i>Text to translate</i> (source language is detected automatically)
+/translate en-zh <i>Text to translate</i>
+/translate de <i>Text to translate</i> (source language is detected automatically)
 /translate <i>Text to translate</i> (source language is detected automatically; target defaults to <b>%s</b>)
 <i>Text to translate</i> can be omitted if you quote another message.
 
@@ -45,14 +44,7 @@ def command_translate(update: Update, context: CallbackContext) -> None:
     """handles the /translate command. somewhat complex because of all the cases
     it needs to handle: omitting target or both languages, translating quoted
     messages..."""
-    text = None
-    if update.message.reply_to_message:
-        if update.message.reply_to_message.text:
-            text = update.message.reply_to_message.text.strip()
-        elif update.message.reply_to_message.caption:
-            text = update.message.reply_to_message.caption.strip()
-    elif context.args:
-        text = remove_command(update.message.text)
+    text = get_command_args(update)
 
     lang_from, lang_to = 'auto', _config('default_language')
     if not context.args:
@@ -112,14 +104,7 @@ def get_scramble_languages() -> list[str]:
 
 def command_scramble(update: Update, _: CallbackContext) -> None:
     """handles the /scramble command."""
-    text = None
-    if update.message.reply_to_message:
-        if update.message.reply_to_message.text:
-            text = update.message.reply_to_message.text.strip()
-        elif update.message.reply_to_message.caption:
-            text = update.message.reply_to_message.caption.strip()
-    elif update.message.text:
-        text = remove_command(update.message.text)
+    text = get_command_args(update)
 
     if not text:
         update.message.reply_text('Scramble what? Type or quote something.')
@@ -315,10 +300,63 @@ def command_log(update: Update, _: CallbackContext) -> None:
             fp.write(b'\xff\x00__SENTINEL__\x00\xff')
 
 
+def command_normalize(update: Update, _: CallbackContext) -> None:
+    """returns the text provided after the translate module has cleaned it up"""
+    if text := get_command_args(update):
+        update.message.reply_text(ellipsis(TranslateWorkerThread.clean_up(text), 4000))
+    else:
+        update.message.reply_text('Missing parameter or quote.')
+
+
+def command_restart(update: Update, _: CallbackContext) -> None:
+    """restarts the bot if the user is an admin"""
+    if is_admin(update.message.from_user.id):
+        update.message.reply_text('Aieee!')
+        with open('restart', 'wb') as fp:
+            fp.write(b'%d' % update.message.chat.id)
+        os.kill(os.getpid(), signal.SIGKILL)
+    else:
+        update.message.reply_animation(_config('error_animation'))
+
+
+def command_debug(update: Update, _: CallbackContext) -> None:
+    """replies with some debug info"""
+    if is_admin(update.message.from_user.id):
+        update.message.reply_text(actions.dump())
+    else:
+        update.message.reply_animation(_config('error_animation'))
+
+
+def command_catchall(update: Update, _: CallbackContext) -> None:
+    """handles unknown commands"""
+    update.message.reply_animation(_config('error_animation'))
+
+
+def command_stats(update: Update, _: CallbackContext) -> None:
+    """returns the stats url for this chat"""
+    if update.message.chat.type in ('group', 'supergroup'):
+        update.message.reply_text(_config('stats_url').replace('CHAT_ID', str(update.message.chat_id)))
+    else:
+        update.message.reply_text('This is not a group.')
+
+
+def command_info(update: Update, _: CallbackContext) -> None:
+    """returns info about the quoted message"""
+    if update.message.reply_to_message:
+        update.message.reply_text(
+            ('<code>%s</code>' %
+             html.escape(pprint.pformat(update.message.reply_to_message.to_dict()))),
+            parse_mode=PARSEMODE_HTML
+        )
+    else:
+        update.message.reply_text('Quote a message to have its contents dumped here.')
+
+
 if __name__ == '__main__':
-    # Create the Updater and pass it your bot's token.
-    bot = Bot(_config('token'))
-    updater = Updater(bot=bot)
+    # connection pool size is workers + updater + dispatcher + job queue + main thread
+    request = Request(con_pool_size=20)
+    bot = Bot(_config('token'), request=request)
+    updater = Updater(bot=bot, workers=16)
 
     message_history = MessageHistory()
     actions = Actions(bot)
@@ -327,11 +365,14 @@ if __name__ == '__main__':
     dispatcher = updater.dispatcher
 
     # on different commands - answer in Telegram
-    dispatcher.add_handler(CommandHandler('start', command_help))
-    dispatcher.add_handler(CommandHandler('help', command_help))
     dispatcher.add_handler(CommandHandler('fortune', command_fortune))
     dispatcher.add_handler(CommandHandler('tip', command_tip))
     dispatcher.add_handler(CommandHandler('oiga', command_oiga))
+    dispatcher.add_handler(CommandHandler('stats', command_stats))
+    dispatcher.add_handler(CommandHandler('normalize', command_normalize))
+    dispatcher.add_handler(CommandHandler('restart', command_restart))
+    dispatcher.add_handler(CommandHandler('debug', command_debug))
+    dispatcher.add_handler(CommandHandler('info', command_info))
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True))
     dispatcher.add_handler(CommandHandler('scramble', command_scramble, run_async=True))
     dispatcher.add_handler(CommandHandler('distort', command_distort, run_async=True))
@@ -341,10 +382,11 @@ if __name__ == '__main__':
                                           command_distort_caption, run_async=True))
 
     # reply to anything that is said to me in private
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.chat_type.private,
+    dispatcher.add_handler(MessageHandler((Filters.text | Filters.poll) & ~Filters.command & Filters.chat_type.private,
                                           command_scramble, run_async=True))
     dispatcher.add_handler(MessageHandler(Filters.photo & ~Filters.command & Filters.chat_type.private,
                                           command_distort, run_async=True))
+    dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_catchall, run_async=True))
 
     sources = get_relays().keys()
     dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.text & ~Filters.command & Filters.update.message,
@@ -360,6 +402,13 @@ if __name__ == '__main__':
 
     # Start the Bot
     updater.start_polling()
+
+    try:
+        with open('restart', 'rb') as fp:
+            bot.send_animation(int(fp.read()), _config('restart_animation'))
+        os.remove('restart')
+    except FileNotFoundError:
+        pass
 
     # Run the bot until you press Ctrl-C or the process receives SIGINT,
     # SIGTERM or SIGABRT. This should be used most of the time, since

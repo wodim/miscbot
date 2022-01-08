@@ -1,6 +1,4 @@
-import html
 import json
-import logging
 import queue
 import threading
 import unicodedata
@@ -8,9 +6,7 @@ import unicodedata
 import emoji
 import requests
 
-
-logging.basicConfig(format='%(asctime)s - %(name)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
+from utils import _config, logger
 
 
 class TranslatorException(Exception): pass
@@ -18,7 +14,7 @@ class UnrecoverableTranslatorException(Exception): pass
 
 
 # https://eli.thegreenplace.net/2011/12/27/python-threads-communication-and-stopping
-class WorkerThread(threading.Thread):
+class TranslateWorkerThread(threading.Thread):
     def __init__(self, result_q, proxy, translation):
         super().__init__()
         self.result_q = result_q
@@ -53,9 +49,10 @@ class WorkerThread(threading.Thread):
         params = {'q': text, 'sl': lang_from, 'tl': lang_to}
 
         response = None
-        for _ in range(3):
+        for _ in range(int(_config('translate_http_retries'))):
             try:
-                response = self.session.get(url, params=params, timeout=5)
+                response = self.session.get(url, params=params,
+                                            timeout=int(_config('translate_http_timeout')))
             except:
                 continue
         if response is None:
@@ -63,7 +60,7 @@ class WorkerThread(threading.Thread):
 
         if response.status_code == 429:
             raise TranslatorException("I'm out of quota by now")
-        elif response.status_code == 400:
+        if response.status_code == 400:
             raise UnrecoverableTranslatorException('You screwed up')
 
         translation = ' '.join([str(x[0]) for x in
@@ -76,13 +73,37 @@ class WorkerThread(threading.Thread):
 
     @staticmethod
     def clean_up(text):
-        text = html.unescape(text)
-        text = '\n'.join([x.strip() for x in text.split('\n')])
-        text = text.replace('@ ', '@')
-        text = ''.join([unicodedata.name(x) + ' ' if x in emoji.UNICODE_EMOJI['en'] else x
+        text = text.replace('\u200d', '').replace('\ufe0f', '')
+        text = ''.join([' ' + TranslateWorkerThread.emoji_name(x) + ' '
+                        if x in emoji.UNICODE_EMOJI['en'] else x
                         for x in text])
-        text = WorkerThread.capitalize(text.strip())
+        text = TranslateWorkerThread.capitalize(text.strip())
+        while '  ' in text:
+            text = text.replace('  ', ' ')
+        text = '\n'.join([x.strip() for x in text.split('\n')])
         return text
+
+    @staticmethod
+    def emoji_name(char):
+        name = unicodedata.name(char)
+        if name == 'EMOJI MODIFIER FITZPATRICK TYPE-1-2':
+            return 'WHITE SKINNED'
+        if name == 'EMOJI MODIFIER FITZPATRICK TYPE-3':
+            return 'LIGHT BROWN SKINNED'
+        if name == 'EMOJI MODIFIER FITZPATRICK TYPE-4':
+            return 'MODERATE BROWN SKINNED'
+        if name == 'EMOJI MODIFIER FITZPATRICK TYPE-5':
+            return 'DARK BROWN SKINNED'
+        if name == 'EMOJI MODIFIER FITZPATRICK TYPE-6':
+            return 'BLACK SKINNED'
+        if name.startswith('EMOJI COMPONENT '):
+            return 'WITH ' + name.replace('EMOJI COMPONENT ', '')
+        if 'VARIATION SELECTOR' in name:
+            return ''
+        for x in ('MARK', 'SIGN'):
+            if name.endswith(' ' + x):
+                return name.replace(' ' + x, '')
+        return name
 
     @staticmethod
     def capitalize(text):
@@ -110,7 +131,7 @@ def translate(text, languages):
 
     with open('proxies.txt', 'rt', encoding='utf8') as fp:
         proxies = fp.read().strip().split('\n')
-    pool = [WorkerThread(result_q, proxy, (text, languages.copy()))
+    pool = [TranslateWorkerThread(result_q, proxy, (text, languages.copy()))
             for proxy in proxies]
 
     for thread in pool:
@@ -123,7 +144,7 @@ def translate(text, languages):
         text_, _ = args
 
         if ident not in results:
-            results[ident] = [(WorkerThread.clean_up(text), languages[0])]
+            results[ident] = [(TranslateWorkerThread.clean_up(text), languages[0])]
         results[ident].append(args)
 
         if len(results[ident]) != len(languages):

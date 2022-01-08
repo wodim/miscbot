@@ -1,8 +1,11 @@
 import configparser
+import logging
 import random
 import re
 
-from telegram import Update
+
+logging.basicConfig(format='%(asctime)s - %(name)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def _config(k: str) -> str:
@@ -27,7 +30,7 @@ def remove_command(message: str) -> str:
     return rx_command.sub('', message).strip()
 
 
-def get_username(update: Update) -> str:
+def get_username(update) -> str:
     if update.message.from_user.last_name:
         return '%s %s' % (update.message.from_user.first_name,
                           update.message.from_user.last_name)
@@ -44,3 +47,30 @@ def get_random_line(filename: str) -> str:
     """gets a random line from the provided file name"""
     with open(filename, 'rt', encoding='utf8') as fp:
         return random.choice(fp.readlines())
+
+
+def get_command_args(update) -> str:
+    def poll_to_text(poll):
+        text = poll.question
+        for option in poll.options:
+            text += '\n• ' + option.text
+        return text
+
+    if update.message.reply_to_message:
+        if update.message.reply_to_message.text:
+            return update.message.reply_to_message.text.strip()
+        if update.message.reply_to_message.caption:
+            return update.message.reply_to_message.caption.strip()
+        if update.message.reply_to_message.poll:
+            return poll_to_text(update.message.reply_to_message.poll)
+    if update.message.poll:
+        return poll_to_text(update.message.poll)
+    if text := remove_command(update.message.text):
+        return text
+    return None
+
+
+def is_admin(user_id: int) -> dict:
+    if admins := _config('admins'):
+        return user_id in [int(x.strip()) for x in admins.split(',')]
+    return False

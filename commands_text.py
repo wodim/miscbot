@@ -64,8 +64,3 @@ def command_oiga(update: Update, context: CallbackContext) -> None:
     context.bot.send_message(update.message.chat_id,
                              get_random_line('oiga.txt'),
                              disable_web_page_preview=True)
-
-
-def command_help(update: Update, _: CallbackContext) -> None:
-    """handles the /start and /help commands."""
-    update.message.reply_text('I have nothing to say to you.')
