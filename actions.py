@@ -1,9 +1,10 @@
 class Actions:
     """this class handles all chat actions: stores thems and sends them
     periodically using a cron method"""
-    def __init__(self, bot):
+    def __init__(self, bot, job_queue):
         self.pending_actions = []
         self.bot = bot
+        self.job_queue = job_queue
 
     def append(self, chat_id, action):
         self.pending_actions.append((chat_id, action))
@@ -15,6 +16,18 @@ class Actions:
             self.pending_actions.remove((chat_id, action))
         except ValueError:
             pass
+
+        # sending a message clears the current action, so check if there are
+        # more actions for this chat_id and send the latest one immediately
+        # (the same thing cron does) -- a small delay is necessary, otherwise
+        # this won't work, so we need the job queue
+        if chat_id in dict(self.pending_actions).keys():
+            self.job_queue.run_once(
+                lambda context: self.bot.send_chat_action(chat_id=context.job.context[0],
+                                                          action=context.job.context[1]),
+                .1,  # 100 msec
+                context=(chat_id, dict(self.pending_actions)[chat_id])
+            )
 
     def cron(self, _):
         """checks which chats have pending actions (typing/sending photo) and

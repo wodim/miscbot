@@ -352,6 +352,14 @@ def command_info(update: Update, _: CallbackContext) -> None:
         update.message.reply_text('Quote a message to have its contents dumped here.')
 
 
+def command_text(update: Update, _: CallbackContext) -> None:
+    """returns the text of the quoted message"""
+    if update.message.reply_to_message:
+        update.message.reply_text(get_command_args(update))
+    else:
+        update.message.reply_text('Quote a message to have its text dumped here.')
+
+
 if __name__ == '__main__':
     # connection pool size is workers + updater + dispatcher + job queue + main thread
     request = Request(con_pool_size=20)
@@ -359,7 +367,7 @@ if __name__ == '__main__':
     updater = Updater(bot=bot, workers=16)
 
     message_history = MessageHistory()
-    actions = Actions(bot)
+    actions = Actions(bot, updater.dispatcher.job_queue)
 
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
@@ -373,6 +381,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('restart', command_restart))
     dispatcher.add_handler(CommandHandler('debug', command_debug))
     dispatcher.add_handler(CommandHandler('info', command_info))
+    dispatcher.add_handler(CommandHandler('text', command_text))
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True))
     dispatcher.add_handler(CommandHandler('scramble', command_scramble, run_async=True))
     dispatcher.add_handler(CommandHandler('distort', command_distort, run_async=True))
