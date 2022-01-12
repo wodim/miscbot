@@ -158,7 +158,6 @@ def sub_distort(filename: str, params: list) -> str:
 
 def command_distort(update: Update, context: CallbackContext) -> None:
     """handles the /distort command"""
-    actions.append(update.message.chat_id, ChatAction.UPLOAD_PHOTO)
 
     if update.message.photo:
         filename = context.bot.get_file(update.message.photo[-1]).download()
@@ -170,12 +169,19 @@ def command_distort(update: Update, context: CallbackContext) -> None:
         update.message.reply_text('Nothing to distort. Upload or quote a photo.')
         return
 
-    distorted_filename = sub_distort(filename, remove_command(text).split(' '))
+    actions.append(update.message.chat_id, ChatAction.UPLOAD_PHOTO)
 
-    with open(distorted_filename, 'rb') as fp:
-        update.message.reply_photo(fp)
+    try:
+        distorted_filename = sub_distort(filename, remove_command(text).split(' '))
 
-    actions.remove(update.message.chat_id, ChatAction.UPLOAD_PHOTO)
+        with open(distorted_filename, 'rb') as fp:
+            update.message.reply_photo(fp)
+    except Exception as exc:
+        update.message.reply_text('Error distorting: %s' % exc)
+        # the original is kept for troubleshooting
+        return
+    finally:
+        actions.remove(update.message.chat_id, ChatAction.UPLOAD_PHOTO)
 
     os.remove(filename)
     os.remove(distorted_filename)
