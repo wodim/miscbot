@@ -23,6 +23,14 @@ class TranslateWorkerThread(threading.Thread):
         self.session = requests.Session()
         self.session.proxies.update(dict(http='http://' + proxy,
                                          https='http://' + proxy))
+        self.session.headers.update({
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9,es;q=0.8',
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+            'Origin': 'https://translate.google.com',
+            'Referer': 'https://translate.google.com/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
+        })
 
     def run(self):
         source = self.languages.pop(0)
