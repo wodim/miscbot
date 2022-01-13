@@ -9,7 +9,8 @@ import threading
 
 from telegram import Bot, ChatAction, Update
 from telegram.constants import PARSEMODE_HTML
-from telegram.ext import CallbackContext, CommandHandler, Filters, MessageHandler, Updater
+from telegram.ext import (CallbackContext, CommandHandler, DispatcherHandlerStop,
+                          Filters, MessageHandler, TypeHandler, Updater)
 from telegram.utils.request import Request
 from wand.image import Image
 
@@ -370,6 +371,14 @@ def command_text(update: Update, _: CallbackContext) -> None:
         update.message.reply_text('Quote a message to have its text dumped here.')
 
 
+def callback_all(update: Update, _: CallbackContext) -> None:
+    """this callback runs for all updates. raising DispatcherHandlerStop inside of
+    it callback stops any other handlers from executing"""
+    banned_users = [int(x.strip()) for x in _config('banned_users').split(',')]
+    if update.message.from_user.id in banned_users:
+        raise DispatcherHandlerStop()
+
+
 if __name__ == '__main__':
     # connection pool size is workers + updater + dispatcher + job queue + main thread
     request = Request(con_pool_size=20)
@@ -381,6 +390,8 @@ if __name__ == '__main__':
 
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
+
+    dispatcher.add_handler(TypeHandler(Update, callback_all), group=-1)
 
     # on different commands - answer in Telegram
     dispatcher.add_handler(CommandHandler('fortune', command_fortune))
@@ -400,7 +411,6 @@ if __name__ == '__main__':
     dispatcher.add_handler(MessageHandler(Filters.caption & Filters.chat_type.group,
                                           command_distort_caption, run_async=True))
 
-    # reply to anything that is said to me in private
     dispatcher.add_handler(MessageHandler((Filters.text | Filters.poll) & ~Filters.command & Filters.chat_type.private,
                                           command_scramble, run_async=True))
     dispatcher.add_handler(MessageHandler(Filters.photo & ~Filters.command & Filters.chat_type.private,
@@ -413,7 +423,8 @@ if __name__ == '__main__':
     dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.photo & Filters.update.message,
                                           command_relay_photo, run_async=True), group=1)
 
-    dispatcher.add_handler(MessageHandler(Filters.chat_type.groups, command_log, run_async=True))
+    # very low group id so it runs even for banned users
+    dispatcher.add_handler(MessageHandler(Filters.chat_type.groups, command_log, run_async=True), group=-9)
 
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
