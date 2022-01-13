@@ -180,7 +180,6 @@ def translate(text, languages):
             valid = [x for x in results.values() if x[-1][0]]
             # if there are no valid translations, bail out.
             if not valid:
-                logger.info('Gave up on this translation')
                 raise TranslatorException("With this translator's failure, the thread of prophecy is severed. Issue the same command again to restore the weave of fate, or persist in the doomed, untranslated world you have created.")
             # then sort the results by the amount of translations done and
             # return the results of the thread that managed to perform a

@@ -2,6 +2,7 @@ import configparser
 import logging
 import random
 import re
+import string
 
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(message)s', level=logging.INFO)
@@ -74,3 +75,7 @@ def is_admin(user_id: int) -> dict:
     if admins := _config('admins'):
         return user_id in [int(x.strip()) for x in admins.split(',')]
     return False
+
+
+def get_random_string(l):
+    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=l))

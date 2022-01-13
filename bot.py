@@ -17,13 +17,14 @@ from actions import Actions
 from commands_text import command_fortune, command_tip, command_oiga
 from message_history import MessageHistory
 from translate import TranslateWorkerThread, translate
-from utils import (_config, ellipsis, get_command_args, get_relays, get_username,
-                   is_admin, remove_command)
+from utils import (_config, ellipsis, get_command_args, get_random_string,
+                   get_relays, get_username, is_admin, logger, remove_command)
 
 
 def sub_translate(text, languages):
     """translate, or else"""
     while True:
+        logger.info('Trying to translate %s...%s "%s"', languages[0], languages[-1], ellipsis(text, 8))
         try:
             return translate(text, languages)
         except:
@@ -126,7 +127,7 @@ def command_scramble(update: Update, _: CallbackContext) -> None:
         update.message.reply_text(ellipsis(text, 4000))
 
 
-distort_semaphore = threading.Semaphore()
+distort_semaphore = threading.Semaphore(int(_config('max_concurrent_distorts')))
 def sub_distort(filename: str, params: list) -> str:
     """parses the distortion parameters and distorts an image. returns
     the file name of the distorted image."""
@@ -160,10 +161,12 @@ def command_distort(update: Update, context: CallbackContext) -> None:
     """handles the /distort command"""
 
     if update.message.photo:
-        filename = context.bot.get_file(update.message.photo[-1]).download()
+        filename = context.bot.get_file(update.message.photo[-1]).\
+            download(custom_path=get_random_string(12) + '.jpg')
         text = update.message.caption or ''
     elif update.message.reply_to_message and len(update.message.reply_to_message.photo):
-        filename = context.bot.get_file(update.message.reply_to_message.photo[-1]).download()
+        filename = context.bot.get_file(update.message.reply_to_message.photo[-1]).\
+            download(custom_path=get_random_string(12) + '.jpg')
         text = update.message.text or ''
     else:
         update.message.reply_text('Nothing to distort. Upload or quote a photo.')
@@ -177,6 +180,7 @@ def command_distort(update: Update, context: CallbackContext) -> None:
         with open(distorted_filename, 'rb') as fp:
             update.message.reply_photo(fp)
     except Exception as exc:
+        logger.exception('Error distorting')
         update.message.reply_text('Error distorting: %s' % exc)
         # the original is kept for troubleshooting
         return

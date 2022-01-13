@@ -23,3 +23,6 @@ stats_url = http://2.vortigaunt.net/CHAT_ID.html
 ; and the timeout for every one of those requests
 translate_http_retries = 3
 translate_http_timeout = 3
+; how many images will the bot distort at the same time. distorting an image is
+; a cpu and memory intensive process, so this needs to be capped
+max_concurrent_distorts = 3
