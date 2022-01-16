@@ -25,7 +25,7 @@ from utils import (_config, ellipsis, get_command_args, get_random_string,
 def sub_translate(text, languages):
     """translate, or else"""
     while True:
-        logger.info('Trying to translate %s...%s "%s"', languages[0], languages[-1], ellipsis(text, 8))
+        logger.info('Translating %s...%s "%s"', languages[0], languages[-1], ellipsis(text, 6))
         try:
             return translate(text, languages)
         except:
@@ -88,10 +88,8 @@ def command_translate(update: Update, context: CallbackContext) -> None:
     finally:
         actions.remove(update.message.chat_id, ChatAction.TYPING)
 
-    if update.message.reply_to_message:
-        update.message.reply_to_message.reply_text(ellipsis(translation, 4000))
-    else:
-        update.message.reply_text(ellipsis(translation, 4000))
+    message = update.message.reply_to_message or update.message
+    message.reply_text(ellipsis(text, 4000), disable_web_page_preview=True)
 
 
 def get_scramble_languages() -> list[str]:
@@ -122,10 +120,8 @@ def command_scramble(update: Update, _: CallbackContext) -> None:
     finally:
         actions.remove(update.message.chat_id, ChatAction.TYPING)
 
-    if update.message.reply_to_message:
-        update.message.reply_to_message.reply_text(ellipsis(text, 4000))
-    else:
-        update.message.reply_text(ellipsis(text, 4000))
+    message = update.message.reply_to_message or update.message
+    message.reply_text(ellipsis(text, 4000), disable_web_page_preview=True)
 
 
 distort_semaphore = threading.Semaphore(int(_config('max_concurrent_distorts')))
@@ -356,8 +352,9 @@ def command_info(update: Update, _: CallbackContext) -> None:
     if update.message.reply_to_message:
         update.message.reply_text(
             ('<code>%s</code>' %
-             html.escape(pprint.pformat(update.message.reply_to_message.to_dict()))),
-            parse_mode=PARSEMODE_HTML
+             ellipsis(html.escape(pprint.pformat(update.message.reply_to_message.to_dict())), 4000)),
+            parse_mode=PARSEMODE_HTML,
+            disable_web_page_preview=True
         )
     else:
         update.message.reply_text('Quote a message to have its contents dumped here.')
@@ -366,17 +363,33 @@ def command_info(update: Update, _: CallbackContext) -> None:
 def command_text(update: Update, _: CallbackContext) -> None:
     """returns the text of the quoted message"""
     if update.message.reply_to_message:
-        update.message.reply_text(get_command_args(update))
+        if text := get_command_args(update):
+            update.message.reply_text(text, disable_web_page_preview=True)
+        else:
+            update.message.reply_text('There is no text in that message.')
     else:
         update.message.reply_text('Quote a message to have its text dumped here.')
 
 
 def callback_all(update: Update, _: CallbackContext) -> None:
     """this callback runs for all updates. raising DispatcherHandlerStop inside of
-    it callback stops any other handlers from executing"""
+    this callback stops any other handlers from executing"""
+    if not hasattr(update.message, 'from_user'):
+        return
     banned_users = [int(x.strip()) for x in _config('banned_users').split(',')]
     if update.message.from_user.id in banned_users:
         raise DispatcherHandlerStop()
+
+
+def command_answer(update: Update, _: CallbackContext) -> None:
+    """replies to some text triggers and stops handling"""
+    if not update.message.text:
+        return
+    triggers = [x.split('|') for x in open('triggers.txt', 'rt', encoding='utf8').readlines()]
+    for trigger, answer in triggers:
+        if update.message.text.lower() == trigger.lower():
+            update.message.reply_text(answer)
+            raise DispatcherHandlerStop()
 
 
 if __name__ == '__main__':
@@ -391,40 +404,46 @@ if __name__ == '__main__':
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
 
-    dispatcher.add_handler(TypeHandler(Update, callback_all), group=-1)
+    # very low group id so it runs even for banned users
+    dispatcher.add_handler(MessageHandler(Filters.chat_type.groups, command_log, run_async=True), group=-999)
 
-    # on different commands - answer in Telegram
-    dispatcher.add_handler(CommandHandler('fortune', command_fortune))
-    dispatcher.add_handler(CommandHandler('tip', command_tip))
-    dispatcher.add_handler(CommandHandler('oiga', command_oiga))
-    dispatcher.add_handler(CommandHandler('stats', command_stats))
-    dispatcher.add_handler(CommandHandler('normalize', command_normalize))
-    dispatcher.add_handler(CommandHandler('restart', command_restart))
-    dispatcher.add_handler(CommandHandler('debug', command_debug))
-    dispatcher.add_handler(CommandHandler('info', command_info))
-    dispatcher.add_handler(CommandHandler('text', command_text))
-    dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True))
-    dispatcher.add_handler(CommandHandler('scramble', command_scramble, run_async=True))
-    dispatcher.add_handler(CommandHandler('distort', command_distort, run_async=True))
+    # relays
+    sources = get_relays().keys()
+    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.text & ~Filters.command & Filters.update.message,
+                                          command_relay_text, run_async=True), group=-20)
+    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.photo & Filters.update.message,
+                                          command_relay_photo, run_async=True), group=-20)
+
+    # banned users
+    dispatcher.add_handler(TypeHandler(Update, callback_all), group=-10)
+
+    # automated responses
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, command_answer), group=30)
+
+    # commands
+    dispatcher.add_handler(CommandHandler('fortune', command_fortune), group=40)
+    dispatcher.add_handler(CommandHandler('tip', command_tip), group=40)
+    dispatcher.add_handler(CommandHandler('oiga', command_oiga), group=40)
+    dispatcher.add_handler(CommandHandler('stats', command_stats), group=40)
+    dispatcher.add_handler(CommandHandler('normalize', command_normalize), group=40)
+    dispatcher.add_handler(CommandHandler('restart', command_restart), group=40)
+    dispatcher.add_handler(CommandHandler('debug', command_debug), group=40)
+    dispatcher.add_handler(CommandHandler('info', command_info), group=40)
+    dispatcher.add_handler(CommandHandler('text', command_text), group=40)
+    dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('scramble', command_scramble, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('distort', command_distort, run_async=True), group=40)
     # CommandHandlers don't work on captions, so all photos with a caption are sent to a
     # fun that will check for the command and then run command_distort if necessary
     dispatcher.add_handler(MessageHandler(Filters.caption & Filters.chat_type.group,
-                                          command_distort_caption, run_async=True))
+                                          command_distort_caption, run_async=True), group=41)
 
+    # responses in private
     dispatcher.add_handler(MessageHandler((Filters.text | Filters.poll) & ~Filters.command & Filters.chat_type.private,
-                                          command_scramble, run_async=True))
+                                          command_scramble, run_async=True), group=40)
     dispatcher.add_handler(MessageHandler(Filters.photo & ~Filters.command & Filters.chat_type.private,
-                                          command_distort, run_async=True))
-    dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_catchall, run_async=True))
-
-    sources = get_relays().keys()
-    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.text & ~Filters.command & Filters.update.message,
-                                          command_relay_text, run_async=True), group=1)
-    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.photo & Filters.update.message,
-                                          command_relay_photo, run_async=True), group=1)
-
-    # very low group id so it runs even for banned users
-    dispatcher.add_handler(MessageHandler(Filters.chat_type.groups, command_log, run_async=True), group=-9)
+                                          command_distort, run_async=True), group=40)
+    dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_catchall, run_async=True), group=40)
 
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
