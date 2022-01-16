@@ -89,7 +89,7 @@ def command_translate(update: Update, context: CallbackContext) -> None:
         actions.remove(update.message.chat_id, ChatAction.TYPING)
 
     message = update.message.reply_to_message or update.message
-    message.reply_text(ellipsis(text, 4000), disable_web_page_preview=True)
+    message.reply_text(ellipsis(translation, 4000), disable_web_page_preview=True)
 
 
 def get_scramble_languages() -> list[str]:
@@ -113,7 +113,7 @@ def command_scramble(update: Update, _: CallbackContext) -> None:
     actions.append(update.message.chat_id, ChatAction.TYPING)
 
     try:
-        text, _ = sub_translate(text, get_scramble_languages())
+        scrambled, _ = sub_translate(text, get_scramble_languages())
     except Exception as exc:
         update.message.reply_text('Error: ' + str(exc))
         return
@@ -121,7 +121,7 @@ def command_scramble(update: Update, _: CallbackContext) -> None:
         actions.remove(update.message.chat_id, ChatAction.TYPING)
 
     message = update.message.reply_to_message or update.message
-    message.reply_text(ellipsis(text, 4000), disable_web_page_preview=True)
+    message.reply_text(ellipsis(scrambled, 4000), disable_web_page_preview=True)
 
 
 distort_semaphore = threading.Semaphore(int(_config('max_concurrent_distorts')))
