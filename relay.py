@@ -7,7 +7,7 @@ from telegram.ext import CallbackContext
 
 from commands_distort import sub_distort
 from commands_translate import get_scramble_languages, sub_translate
-from utils import ellipsis, get_relays, get_username
+from utils import _config, ellipsis, get_relays, get_username
 
 
 def command_relay_text(update: Update, context: CallbackContext) -> None:
@@ -85,3 +85,28 @@ def send_relayed_message(update: Update, context: CallbackContext,
         )
 
     context.bot_data['message_history'].add_relayed_message(update.message, message)
+
+
+def cron_delete(context: CallbackContext) -> None:
+    """gets executed periodically and tries to forward the last messages in every
+    relayed group to a second channel. if any of the messages fail to forward it's
+    because they were deleted from the group and must be deleted from the relay
+    channel also."""
+    for from_ in get_relays().keys():
+        for message in context.bot_data['message_history'].get_latest(from_):
+            try:
+                relay_check_message = message.forward(_config('chat_relay_delete_channel'))
+            except:
+                try:
+                    # try to remove the relayed message
+                    for relayed_message in message.relayed_messages:
+                        relayed_message.delete()
+                except:
+                    # failed, so the message wasn't relayed yet
+                    # prevent the bot from posting the relayed message
+                    context.bot_data['message_history'].add_pending_removal(message)
+                context.bot_data['message_history'].remove(message)
+            try:
+                relay_check_message.delete()
+            except:
+                pass
