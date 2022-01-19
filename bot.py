@@ -114,7 +114,7 @@ def command_answer(update: Update, _: CallbackContext) -> None:
     """replies to some text triggers and stops handling"""
     if not update.message.text:
         return
-    with open('triggers.txt', 'rt', encoding='utf8').readlines() as fp:
+    with open('triggers.txt', 'rt', encoding='utf8') as fp:
         triggers = [x.split('|') for x in fp.readlines()]
     for trigger, answer in triggers:
         if update.message.text.lower() == trigger.lower():
