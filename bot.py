@@ -14,100 +14,23 @@ from telegram.utils.request import Request
 
 from _4chan import _4chan_cron, command_thread
 from actions import Actions
-from commands_distort import command_distort, command_distort_caption, sub_distort
+from commands_distort import command_distort, command_distort_caption
 from commands_text import command_fortune, command_tip, command_oiga
-from commands_translate import (command_scramble, command_translate,
-                                get_scramble_languages, sub_translate)
+from commands_translate import command_scramble, command_translate
 from message_history import MessageHistory
+from relay import command_relay_text, command_relay_photo
 from translate import TranslateWorkerThread
 from utils import (_config, ellipsis, get_command_args, get_relays,
-                   get_username, is_admin, send_admin_message)
+                   is_admin, send_admin_message)
 
 
-def command_relay_text(update: Update, context: CallbackContext) -> None:
-    """executed for every text message sent to a relayed group. scrambles the
-    message and sends it to the matching relay channel"""
-    message_history.push(update.message)
-
-    text, trace = sub_translate(update.message.text, get_scramble_languages())
-
-    send_relayed_message(update, context, text, trace=trace)
-
-
-def command_relay_photo(update: Update, context: CallbackContext) -> None:
-    """executed for every photo sent to a relayed group. distorts the photo,
-    scrambles the caption if any and sends to the matching channel"""
-    message_history.push(update.message)
-
-    filename = context.bot.get_file(update.message.photo[-1]).download()
-    distorted_filename = sub_distort(filename, ['50'])
-
-    text, trace = None, None
-    if update.message.caption:
-        try:
-            text, trace = sub_translate(update.message.caption, get_scramble_languages())
-        except:
-            pass
-
-    with open(distorted_filename, 'rb') as fp:
-        send_relayed_message(update, context, text, fp, trace)
-
-    os.remove(filename)
-    os.remove(distorted_filename)
-
-
-def get_language_code(code):
-    """formats a zz or zz-yy language code to be displayed in traces"""
-    return '%4s ' % (code.split('-')[0] if '-' in code else code)
-
-
-def send_relayed_message(update: Update, context: CallbackContext,
-                         text=None, photo_fp=None, trace=None):
-    """sends a message to a relayed channel"""
-    if not message_history.can_post(update.message):
-        return
-
-    relay_channel, trace_channel = get_relays()[update.message.chat_id]
-
-    if trace and trace_channel and trace_channel != 0:
-        trace_text = '\n'.join(['<code>%s</code>%s' % (get_language_code(language),
-                                                       html.escape(text) if text else '<i>(failed)</i>')
-                                for text, language in trace])
-        trace_message = context.bot.send_message(
-            trace_channel,
-            '<b>%s</b>\n%s' % (html.escape(get_username(update)), ellipsis(trace_text, 3900)),
-            parse_mode=PARSEMODE_HTML, disable_web_page_preview=True
-        )
-        message_text = ('<b>%s</b> <a href="%s">[source]</a> <a href="%s">[trace]</a>\n%s' %
-                        (html.escape(get_username(update)), update.message.link, trace_message.link,
-                         html.escape(ellipsis(text or '', 900 if photo_fp else 3900))))
-    else:
-        message_text = ('<b>%s</b> <a href="%s">[source]</a>\n%s' %
-                        (html.escape(get_username(update)), update.message.link,
-                         html.escape(ellipsis(text or '', 900 if photo_fp else 3900))))
-
-    if photo_fp:
-        message = context.bot.send_photo(
-            relay_channel,
-            photo_fp, caption=message_text,
-            parse_mode=PARSEMODE_HTML
-        )
-    else:
-        message = context.bot.send_message(
-            relay_channel, message_text,
-            parse_mode=PARSEMODE_HTML, disable_web_page_preview=True
-        )
-
-    message_history.add_relayed_message(update.message, message)
-
-
-def cron_delete(_: CallbackContext) -> None:
+def cron_delete(context: CallbackContext) -> None:
     """gets executed periodically and tries to forward the last messages in every
     relayed group to a second channel. if any of the messages fail to forward it's
     because they were deleted from the group and must be deleted from the relay
     channel also."""
     for from_ in get_relays().keys():
-        for message in message_history.get_latest(from_):
+        for message in context.bot_data['message_history'].get_latest(from_):
             try:
                 relay_check_message = message.forward(_config('chat_relay_delete_channel'))
             except:
@@ -118,8 +41,8 @@ def cron_delete(_: CallbackContext) -> None:
                 except:
                     # failed, so the message wasn't relayed yet
                     # prevent the bot from posting the relayed message
-                    message_history.add_pending_removal(message)
-                message_history.remove(message)
+                    context.bot_data['message_history'].add_pending_removal(message)
+                context.bot_data['message_history'].remove(message)
             try:
                 relay_check_message.delete()
             except:
@@ -235,7 +158,10 @@ if __name__ == '__main__':
 
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
-    dispatcher.bot_data['actions'] = actions
+    dispatcher.bot_data.update({
+        'message_history': message_history,
+        'actions': actions,
+    })
 
     # very low group id so it runs even for banned users
     dispatcher.add_handler(MessageHandler(Filters.chat_type.groups, command_log, run_async=True), group=-999)
