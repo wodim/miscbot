@@ -1,3 +1,4 @@
+import datetime
 import html
 import os
 import pickle
@@ -14,6 +15,7 @@ from telegram.ext import (CallbackContext, CommandHandler, DispatcherHandlerStop
 from telegram.utils.request import Request
 from wand.image import Image
 
+from _4chan import _4chan_cron, command_thread
 from actions import Actions
 from commands_text import command_fortune, command_tip, command_oiga
 from message_history import MessageHistory
@@ -408,6 +410,7 @@ if __name__ == '__main__':
 
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
+    dispatcher.bot_data['actions'] = actions
 
     # very low group id so it runs even for banned users
     dispatcher.add_handler(MessageHandler(Filters.chat_type.groups, command_log, run_async=True), group=-999)
@@ -435,6 +438,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('debug', command_debug), group=40)
     dispatcher.add_handler(CommandHandler('info', command_info), group=40)
     dispatcher.add_handler(CommandHandler('text', command_text), group=40)
+    dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('scramble', command_scramble, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('distort', command_distort, run_async=True), group=40)
@@ -453,6 +457,16 @@ if __name__ == '__main__':
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
     dispatcher.job_queue.run_repeating(actions.cron, interval=4)
+
+    first_cron = datetime.datetime.now().astimezone()
+    if first_cron.hour % 2 == 0:
+        first_cron += datetime.timedelta(hours=2)
+    else:
+        first_cron += datetime.timedelta(hours=1)
+    first_cron = first_cron.replace(minute=0, second=0, microsecond=0)
+    print('first cron scheduled for %s' % first_cron.isoformat())
+    dispatcher.job_queue.run_repeating(_4chan_cron, first=first_cron,
+                                       interval=60 * 60 * 2)
 
     # Start the Bot
     updater.start_polling()

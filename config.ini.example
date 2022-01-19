@@ -26,3 +26,5 @@ translate_http_timeout = 3
 ; how many images will the bot distort at the same time. distorting an image is
 ; a cpu and memory intensive process, so this needs to be capped
 max_concurrent_distorts = 3
+4chan_boards = r9k wsg g v
+4chan_cron_chat_id = -123123123123
