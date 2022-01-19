@@ -3,99 +3,25 @@ import html
 import os
 import pickle
 import pprint
-import re
 import signal
 import threading
 
-from telegram import Bot, ChatAction, Update
+from telegram import Bot, Update
 from telegram.constants import PARSEMODE_HTML
 from telegram.ext import (CallbackContext, CommandHandler, DispatcherHandlerStop,
                           Filters, MessageHandler, TypeHandler, Updater)
 from telegram.utils.request import Request
-from wand.image import Image
 
 from _4chan import _4chan_cron, command_thread
 from actions import Actions
+from commands_distort import command_distort, command_distort_caption, sub_distort
 from commands_text import command_fortune, command_tip, command_oiga
 from commands_translate import (command_scramble, command_translate,
                                 get_scramble_languages, sub_translate)
 from message_history import MessageHistory
 from translate import TranslateWorkerThread
-from utils import (_config, ellipsis, get_command_args, get_random_string,
-                   get_relays, get_username, is_admin, logger, remove_command,
-                   send_admin_message)
-
-
-distort_semaphore = threading.Semaphore(int(_config('max_concurrent_distorts')))
-def sub_distort(filename: str, params: list) -> str:
-    """parses the distortion parameters and distorts an image. returns
-    the file name of the distorted image."""
-    scale = 25
-    dimension = '*'
-    for param in params:
-        try:
-            scale = int(param)
-        except:
-            pass
-        if param in ('h', 'w'):
-            dimension = param
-    if not 0 < scale < 100:
-        scale = 25
-
-    with distort_semaphore:
-        img = Image(filename=filename)
-        w, h = img.width, img.height
-        new_w = int(w * (1 + scale / 100)) if dimension in ('*', 'w') else w
-        new_h = int(h * (1 + scale / 100)) if dimension in ('*', 'h') else h
-        img.resize(new_w, new_h)
-        img.liquid_rescale(w, h)
-        img.save(filename='distorted_' + filename)
-        img.destroy()
-        img.close()
-
-    return 'distorted_' + filename
-
-
-def command_distort(update: Update, context: CallbackContext) -> None:
-    """handles the /distort command"""
-
-    if update.message.photo:
-        filename = context.bot.get_file(update.message.photo[-1]).\
-            download(custom_path=get_random_string(12) + '.jpg')
-        text = update.message.caption or ''
-    elif update.message.reply_to_message and len(update.message.reply_to_message.photo):
-        filename = context.bot.get_file(update.message.reply_to_message.photo[-1]).\
-            download(custom_path=get_random_string(12) + '.jpg')
-        text = update.message.text or ''
-    else:
-        update.message.reply_text('Nothing to distort. Upload or quote a photo.')
-        return
-
-    actions.append(update.message.chat_id, ChatAction.UPLOAD_PHOTO)
-
-    try:
-        distorted_filename = sub_distort(filename, remove_command(text).split(' '))
-
-        with open(distorted_filename, 'rb') as fp:
-            update.message.reply_photo(fp)
-    except Exception as exc:
-        logger.exception('Error distorting')
-        update.message.reply_text('Error distorting: %s' % exc)
-        # the original is kept for troubleshooting
-        return
-    finally:
-        actions.remove(update.message.chat_id, ChatAction.UPLOAD_PHOTO)
-
-    os.remove(filename)
-    os.remove(distorted_filename)
-
-
-rx_command_check = re.compile(r'^/distort(@aryan_bot)?(\s|$)', re.IGNORECASE)
-def command_distort_caption(update: Update, context: CallbackContext) -> None:
-    """check if a photo with caption has a distort command. if so, distorts it.
-    else, it does nothing."""
-    if rx_command_check.match(update.message.caption):
-        command_distort(update, context)
+from utils import (_config, ellipsis, get_command_args, get_relays,
+                   get_username, is_admin, send_admin_message)
 
 
 def command_relay_text(update: Update, context: CallbackContext) -> None:
