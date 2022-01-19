@@ -71,10 +71,20 @@ def get_command_args(update) -> str:
     return None
 
 
-def is_admin(user_id: int) -> dict:
+def get_admins() -> dict:
     if admins := _config('admins'):
-        return user_id in [int(x.strip()) for x in admins.split(',')]
-    return False
+        return [int(x.strip()) for x in admins.split(',')]
+    return []
+
+
+def is_admin(user_id: int) -> bool:
+    return user_id in get_admins()
+
+
+def send_admin_message(bot, text: str) -> None:
+    """sends a message to all admins"""
+    for user_id in get_admins():
+        bot.send_message(user_id, text)
 
 
 def get_random_string(l):

@@ -19,7 +19,8 @@ from commands_text import command_fortune, command_tip, command_oiga
 from message_history import MessageHistory
 from translate import TranslateWorkerThread, translate
 from utils import (_config, ellipsis, get_command_args, get_random_string,
-                   get_relays, get_username, is_admin, logger, remove_command)
+                   get_relays, get_username, is_admin, logger, remove_command,
+                   send_admin_message)
 
 
 def sub_translate(text, languages):
@@ -299,12 +300,15 @@ def cron_delete(_: CallbackContext) -> None:
 
 
 log_semaphore = threading.Semaphore()
-def command_log(update: Update, _: CallbackContext) -> None:
+def command_log(update: Update, context: CallbackContext) -> None:
     """logs a pickled representation of every update message to a file"""
     with log_semaphore:
         with open('log.pickle', 'ab') as fp:
             pickle.dump(update.to_dict(), fp)
-            fp.write(b'\xff\x00__SENTINEL__\x00\xff')
+            try:
+                fp.write(b'\xff\x00__SENTINEL__\x00\xff')
+            except OSError as exc:
+                send_admin_message(context.bot, str(exc))
 
 
 def command_normalize(update: Update, _: CallbackContext) -> None:
@@ -385,7 +389,8 @@ def command_answer(update: Update, _: CallbackContext) -> None:
     """replies to some text triggers and stops handling"""
     if not update.message.text:
         return
-    triggers = [x.split('|') for x in open('triggers.txt', 'rt', encoding='utf8').readlines()]
+    with open('triggers.txt', 'rt', encoding='utf8').readlines() as fp:
+        triggers = [x.split('|') for x in fp.readlines()]
     for trigger, answer in triggers:
         if update.message.text.lower() == trigger.lower():
             update.message.reply_text(answer)
