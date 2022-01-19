@@ -3,7 +3,6 @@ import html
 import os
 import pickle
 import pprint
-import random
 import re
 import signal
 import threading
@@ -18,113 +17,13 @@ from wand.image import Image
 from _4chan import _4chan_cron, command_thread
 from actions import Actions
 from commands_text import command_fortune, command_tip, command_oiga
+from commands_translate import (command_scramble, command_translate,
+                                get_scramble_languages, sub_translate)
 from message_history import MessageHistory
-from translate import TranslateWorkerThread, translate
+from translate import TranslateWorkerThread
 from utils import (_config, ellipsis, get_command_args, get_random_string,
                    get_relays, get_username, is_admin, logger, remove_command,
                    send_admin_message)
-
-
-def sub_translate(text, languages):
-    """translate, or else"""
-    while True:
-        logger.info('Translating %s...%s "%s"', languages[0], languages[-1], ellipsis(text, 6))
-        try:
-            return translate(text, languages)
-        except:
-            pass
-
-
-RX_MULTI_LANG = re.compile(r'^([a-z]{2})\-([a-z]{2})(\s|$)', re.IGNORECASE)
-RX_SINGLE_LANG = re.compile(r'^([a-z]{2})(\s|$)', re.IGNORECASE)
-TRANSLATE_USAGE = """<b>Usage</b>
-/translate en-zh <i>Text to translate</i>
-/translate de <i>Text to translate</i> (source language is detected automatically)
-/translate <i>Text to translate</i> (source language is detected automatically; target defaults to <b>%s</b>)
-<i>Text to translate</i> can be omitted if you quote another message.
-
-<b>Supported languages</b>
-"""
-def command_translate(update: Update, context: CallbackContext) -> None:
-    """handles the /translate command. somewhat complex because of all the cases
-    it needs to handle: omitting target or both languages, translating quoted
-    messages..."""
-    text = get_command_args(update)
-
-    lang_from, lang_to = 'auto', _config('default_language')
-    if not context.args:
-        # there are no parameters to the command so use default options
-        pass
-    elif matches := RX_MULTI_LANG.match(remove_command(update.message.text)):
-        lang_from, lang_to = matches[1], matches[2]
-        text = RX_MULTI_LANG.sub('', text)
-    elif matches := RX_SINGLE_LANG.match(remove_command(update.message.text)):
-        lang_from, lang_to = 'auto', matches[1]
-        text = RX_SINGLE_LANG.sub('', text)
-
-    if lang_from == lang_to:
-        update.message.reply_text("Source and target languages can't be the same.")
-        return
-
-    all_languages = sorted([x.strip() for x in _config('all_languages').split(',')])
-
-    if lang_from not in all_languages + ['auto']:
-        update.message.reply_text('Invalid source language "%s" provided.' % lang_from)
-        return
-    if lang_to not in all_languages:
-        update.message.reply_text('Invalid target language "%s" provided.' % lang_to)
-        return
-
-    if not text or not text.strip():
-        update.message.reply_text((TRANSLATE_USAGE % _config('default_language')
-                                   + ', '.join(all_languages)),
-                                  parse_mode=PARSEMODE_HTML)
-        return
-
-    actions.append(update.message.chat_id, ChatAction.TYPING)
-
-    try:
-        translation, _ = sub_translate(text, [lang_from, lang_to])
-    except Exception as exc:
-        update.message.reply_text('Error: ' + str(exc))
-        return
-    finally:
-        actions.remove(update.message.chat_id, ChatAction.TYPING)
-
-    message = update.message.reply_to_message or update.message
-    message.reply_text(ellipsis(translation, 4000), disable_web_page_preview=True)
-
-
-def get_scramble_languages() -> list[str]:
-    """returns a random list of languages to be used by the translator to
-    scramble text"""
-    languages = [x.strip() for x in _config('scrambler_languages').split(',')]
-    random.shuffle(languages)
-    return (['auto'] +
-            languages[:int(_config('scrambler_languages_count'))] +
-            [_config('default_language')])
-
-
-def command_scramble(update: Update, _: CallbackContext) -> None:
-    """handles the /scramble command."""
-    text = get_command_args(update)
-
-    if not text:
-        update.message.reply_text('Scramble what? Type or quote something.')
-        return
-
-    actions.append(update.message.chat_id, ChatAction.TYPING)
-
-    try:
-        scrambled, _ = sub_translate(text, get_scramble_languages())
-    except Exception as exc:
-        update.message.reply_text('Error: ' + str(exc))
-        return
-    finally:
-        actions.remove(update.message.chat_id, ChatAction.TYPING)
-
-    message = update.message.reply_to_message or update.message
-    message.reply_text(ellipsis(scrambled, 4000), disable_web_page_preview=True)
 
 
 distort_semaphore = threading.Semaphore(int(_config('max_concurrent_distorts')))
