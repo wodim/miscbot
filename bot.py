@@ -12,7 +12,7 @@ from telegram.ext import (CallbackContext, CommandHandler, DispatcherHandlerStop
                           Filters, MessageHandler, TypeHandler, Updater)
 from telegram.utils.request import Request
 
-from _4chan import _4chan_cron, command_thread
+from _4chan import cron_4chan, command_thread
 from actions import Actions
 from commands_distort import command_distort, command_distort_caption
 from commands_text import command_fortune, command_tip, command_oiga
@@ -110,15 +110,15 @@ def callback_all(update: Update, _: CallbackContext) -> None:
         raise DispatcherHandlerStop()
 
 
-def command_answer(update: Update, _: CallbackContext) -> None:
+def command_answer(update: Update, context: CallbackContext) -> None:
     """replies to some text triggers and stops handling"""
-    if not update.message.text:
+    if not update.message or not update.message.text:
         return
     with open('triggers.txt', 'rt', encoding='utf8') as fp:
         triggers = [x.split('|') for x in fp.readlines()]
     for trigger, answer in triggers:
         if update.message.text.lower() == trigger.lower():
-            update.message.reply_text(answer)
+            context.bot.send_message(update.message.chat.id, answer)
             raise DispatcherHandlerStop()
 
 
@@ -152,7 +152,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(TypeHandler(Update, callback_all), group=-10)
 
     # automated responses
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, command_answer), group=30)
+    dispatcher.add_handler(MessageHandler(Filters.text, command_answer), group=30)
 
     # commands
     dispatcher.add_handler(CommandHandler('fortune', command_fortune), group=40)
@@ -176,7 +176,7 @@ if __name__ == '__main__':
     # responses in private
     dispatcher.add_handler(MessageHandler((Filters.text | Filters.poll) & ~Filters.command & Filters.chat_type.private,
                                           command_scramble, run_async=True), group=40)
-    dispatcher.add_handler(MessageHandler(Filters.photo & ~Filters.command & Filters.chat_type.private,
+    dispatcher.add_handler(MessageHandler((Filters.photo | Filters.animation | Filters.video) & ~Filters.command & Filters.chat_type.private,
                                           command_distort, run_async=True), group=40)
     dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_catchall, run_async=True), group=40)
 
@@ -191,7 +191,7 @@ if __name__ == '__main__':
         first_cron += datetime.timedelta(hours=1)
     first_cron = first_cron.replace(minute=0, second=0, microsecond=0)
     print('first cron scheduled for %s' % first_cron.isoformat())
-    dispatcher.job_queue.run_repeating(_4chan_cron, first=first_cron,
+    dispatcher.job_queue.run_repeating(cron_4chan, first=first_cron,
                                        interval=60 * 60 * 2)
 
     # Start the Bot

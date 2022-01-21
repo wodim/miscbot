@@ -113,7 +113,7 @@ class _4chan:
         return threads_ids
 
 
-def _4chan_cron(context: CallbackContext) -> None:
+def cron_4chan(context: CallbackContext) -> None:
     if 2 < datetime.datetime.now().astimezone().hour < 10:
         return
     post_thread(int(_config('4chan_cron_chat_id')), context)
@@ -127,7 +127,7 @@ def command_thread(update: Update, context: CallbackContext) -> None:
         raise
 
 
-FFMPEG_CMD = 'ffmpeg -hide_banner -i \'{source}\' -preset veryfast \'{dest}\''
+FFMPEG_CMD = "ffmpeg -hide_banner -i '{source}' -preset veryfast '{dest}'"
 def _webm_convert(file: str) -> str:
     """converts a webm to a mp4 file"""
     new_file = file + '.mp4'
@@ -186,4 +186,4 @@ def post_thread(chat_id: int, context: CallbackContext, args: list = None) -> No
                              parse_mode=PARSEMODE_MARKDOWN_V2,
                              disable_web_page_preview=True)
 
-    context.bot_data['actions'].append(chat_id, ChatAction.TYPING)
+    context.bot_data['actions'].remove(chat_id, ChatAction.TYPING)

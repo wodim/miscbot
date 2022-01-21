@@ -26,7 +26,7 @@ def command_relay_photo(update: Update, context: CallbackContext) -> None:
     context.bot_data['message_history'].push(update.message)
 
     filename = context.bot.get_file(update.message.photo[-1]).download()
-    distorted_filename = sub_distort(filename, ['50'])
+    distorted_filename = sub_distort(filename, None, 40)
 
     text, trace = None, None
     if update.message.caption:

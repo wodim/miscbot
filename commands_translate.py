@@ -95,7 +95,7 @@ def command_scramble(update: Update, context: CallbackContext) -> None:
     text = get_command_args(update)
 
     if not text:
-        update.message.reply_text('Scramble what? Type or quote something.')
+        update.message.reply_text('Scramble what? Type something or quote another message.')
         return
 
     context.bot_data['actions'].append(update.message.chat_id, ChatAction.TYPING)
