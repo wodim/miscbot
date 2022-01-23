@@ -5,9 +5,9 @@ from telegram import Update
 from telegram.constants import PARSEMODE_HTML
 from telegram.ext import CallbackContext
 
-from commands_distort import sub_distort
+from commands_distort import sub_distort, sub_invert
 from commands_translate import get_scramble_languages, sub_translate
-from utils import _config, ellipsis, get_relays, get_username
+from utils import _config, ellipsis, get_random_string, get_relays, get_username
 
 
 def command_relay_text(update: Update, context: CallbackContext) -> None:
@@ -38,6 +38,31 @@ def command_relay_photo(update: Update, context: CallbackContext) -> None:
     with open(distorted_filename, 'rb') as fp:
         send_relayed_message(update, context, text, fp, trace)
 
+    os.remove(filename)
+    os.remove(distorted_filename)
+
+
+def command_relay_chat_photo(update: Update, context: CallbackContext) -> None:
+    relay_channel, trace_channel = get_relays()[update.message.chat_id]
+
+    if update.message.delete_chat_photo:
+        if trace_channel:
+            context.bot.delete_chat_photo(trace_channel)
+        context.bot.delete_chat_photo(relay_channel)
+        return
+
+    if update.message.new_chat_photo:
+        filename = context.bot.get_file(update.message.new_chat_photo[-1]).\
+            download(custom_path=get_random_string(12) + '.jpg')
+
+    distorted_filename = sub_distort(filename, None, 40)
+
+    if trace_channel:
+        inverted_filename = sub_invert(filename)
+        context.bot.set_chat_photo(trace_channel, open(inverted_filename, 'rb'))
+        os.remove(inverted_filename)
+
+    context.bot.set_chat_photo(relay_channel, open(distorted_filename, 'rb'))
     os.remove(filename)
     os.remove(distorted_filename)
 

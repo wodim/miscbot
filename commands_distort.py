@@ -14,8 +14,9 @@ from utils import _config, get_random_string, logger, remove_command
 DISTORT_FORMAT = 'jpg'
 MAX_SCORE = 800 * 600 * 1000
 
+wand_semaphore = threading.Semaphore(int(_config('max_concurrent_distorts')))
 
-distort_semaphore = threading.Semaphore(int(_config('max_concurrent_distorts')))
+
 def sub_distort(source: str, output: str = '', scale: float = -1, dimension: str = '') -> str:
     """distorts an image. returns the file name of the distorted image."""
     if not 0 < scale < 100:
@@ -25,7 +26,7 @@ def sub_distort(source: str, output: str = '', scale: float = -1, dimension: str
     if not output:
         output = 'distorted_' + source
 
-    with distort_semaphore:
+    with wand_semaphore:
         img = Image(filename=source)
         w, h = img.width, img.height
         if w % 2 != 0:
@@ -36,6 +37,22 @@ def sub_distort(source: str, output: str = '', scale: float = -1, dimension: str
         new_h = int(w * (1 - (scale / 100))) if dimension in ('*', 'h') else h
         img.liquid_rescale(new_w, new_h)
         img.resize(w, h)
+        img.compression_quality = 100
+        img.save(filename=output)
+        img.destroy()
+        img.close()
+
+    return output
+
+
+def sub_invert(source: str, output: str = '') -> str:
+    """inverts the colours of an image. returns the file name of the inverted image."""
+    if not output:
+        output = 'inverted_' + source
+
+    with wand_semaphore:
+        img = Image(filename=source)
+        img.negate()
         img.compression_quality = 100
         img.save(filename=output)
         img.destroy()
@@ -56,6 +73,7 @@ RX_NUMBER = re.compile(r'\-\d{6}')
 def sub_distort_animation(filename: str) -> str:
     def remap(x, in_min, in_max, out_min, out_max):
         return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+
     def distorted_name(source, i):
         source = RX_NUMBER.sub('', source)
         return '%s-distort-%06d%s' % (source[:len(source) - 4], i, source[len(source) - 4:])
@@ -140,6 +158,26 @@ def command_distort(update: Update, context: CallbackContext) -> None:
         command_distort_photo(update, context, filename, text)
     else:
         command_distort_animation(update, context, filename)
+
+
+def command_invert(update: Update, context: CallbackContext) -> None:
+    """handles the /invert command"""
+    if update.message.photo:
+        filename = context.bot.get_file(update.message.photo[-1]).\
+            download(custom_path=get_random_string(12) + '.jpg')
+    elif update.message.reply_to_message and len(update.message.reply_to_message.photo):
+        filename = context.bot.get_file(update.message.reply_to_message.photo[-1]).\
+            download(custom_path=get_random_string(12) + '.jpg')
+    else:
+        update.message.reply_text('Nothing to invert. Upload or quote a photo.')
+        return
+
+    inverted_filename = sub_invert(filename)
+
+    update.message.reply_photo(open(inverted_filename, 'rb'))
+
+    os.remove(filename)
+    os.remove(inverted_filename)
 
 
 def command_distort_animation(update: Update, context: CallbackContext, filename: str) -> None:

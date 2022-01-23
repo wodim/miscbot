@@ -15,11 +15,12 @@ from telegram.utils.request import Request
 from _4chan import cron_4chan, command_thread
 from actions import Actions
 from calc import command_calc
-from commands_distort import command_distort, command_distort_caption
+from commands_distort import command_distort, command_distort_caption, command_invert
 from commands_text import command_fortune, command_tip, command_oiga
 from commands_translate import command_scramble, command_translate
 from message_history import MessageHistory
-from relay import command_relay_text, command_relay_photo, cron_delete
+from relay import (command_relay_chat_photo, command_relay_text, command_relay_photo,
+                   cron_delete)
 from translate import TranslateWorkerThread
 from utils import (_config, ellipsis, get_command_args, get_relays,
                    is_admin, send_admin_message)
@@ -157,6 +158,9 @@ if __name__ == '__main__':
                                           command_relay_text, run_async=True), group=-20)
     dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.photo & Filters.update.message,
                                           command_relay_photo, run_async=True), group=-20)
+    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & (Filters.status_update.new_chat_photo |
+                                                                   Filters.status_update.delete_chat_photo),
+                                          command_relay_chat_photo, run_async=True), group=-20)
 
     # banned users
     dispatcher.add_handler(TypeHandler(Update, callback_all), group=-10)
@@ -181,6 +185,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('scramble', command_scramble, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('distort', command_distort, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('invert', command_invert, run_async=True), group=40)
     # CommandHandlers don't work on captions, so all photos with a caption are sent to a
     # fun that will check for the command and then run command_distort if necessary
     dispatcher.add_handler(MessageHandler(Filters.caption & Filters.chat_type.group,
