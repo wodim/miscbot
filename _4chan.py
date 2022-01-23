@@ -136,7 +136,7 @@ def _webm_convert(file: str) -> str:
 
     logger.info('converting %s to %s', file, new_file)
     subprocess.call(FFMPEG_CMD.format(source=file, dest=new_file), shell=True)
-    if not os.path.exists(new_file):
+    if not os.path.exists(new_file) or os.path.getsize(new_file) == 0:
         raise RuntimeError("for some reason, %s wasn't created" % new_file)
 
     return new_file

@@ -49,7 +49,7 @@ FFMPEG_CMD_HAS_AUDIO = "ffprobe -v error -select_streams a:0 -show_entries strea
 FFMPEG_CMD_EXTRACT = "ffmpeg -hide_banner -i '{source}' -map 0:v:0 -q:v 2 '{prefix}-%06d." + DISTORT_FORMAT + "'"
 FFMPEG_CMD_COMPOSE = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
 FFMPEG_CMD_COMPOSE_WITH_AUDIO = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -i '{original}' -map 0:v -map 1:a -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
-MIN_DISTORT = 10
+MIN_DISTORT = 0
 MAX_DISTORT = 80
 PHOTO_TO_GIF_FRAMES = 100
 RX_NUMBER = re.compile(r'\-\d{6}')
@@ -73,7 +73,7 @@ def sub_distort_animation(filename: str) -> str:
 
         score = frame_count * width * height
         if score > MAX_SCORE:
-            raise ValueError(f'Video is too long or large ({score}; maximum is {MAX_SCORE}).')
+            raise ValueError(f'Video is too long or too large ({score}; maximum is {MAX_SCORE}).')
 
         output = subprocess.check_output(FFMPEG_CMD_HAS_AUDIO.format(source=filename), shell=True)
         has_audio = len(output) > 1

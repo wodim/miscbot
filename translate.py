@@ -93,7 +93,10 @@ class TranslateWorkerThread(threading.Thread):
 
     @staticmethod
     def emoji_name(char):
-        name = unicodedata.name(char)
+        try:
+            name = unicodedata.name(char)
+        except ValueError:
+            return char
         if name == 'EMOJI MODIFIER FITZPATRICK TYPE-1-2':
             return 'WHITE SKINNED'
         if name == 'EMOJI MODIFIER FITZPATRICK TYPE-3':

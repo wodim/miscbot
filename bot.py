@@ -14,6 +14,7 @@ from telegram.utils.request import Request
 
 from _4chan import cron_4chan, command_thread
 from actions import Actions
+from calc import command_calc
 from commands_distort import command_distort, command_distort_caption
 from commands_text import command_fortune, command_tip, command_oiga
 from commands_translate import command_scramble, command_translate
@@ -59,6 +60,15 @@ def command_debug(update: Update, _: CallbackContext) -> None:
     """replies with some debug info"""
     if is_admin(update.message.from_user.id):
         update.message.reply_text(actions.dump())
+    else:
+        update.message.reply_animation(_config('error_animation'))
+
+
+def command_flush(update: Update, _: CallbackContext) -> None:
+    """flush the pending action list"""
+    if is_admin(update.message.from_user.id):
+        actions.flush()
+        update.message.reply_text('done')
     else:
         update.message.reply_animation(_config('error_animation'))
 
@@ -158,10 +168,13 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('fortune', command_fortune), group=40)
     dispatcher.add_handler(CommandHandler('tip', command_tip), group=40)
     dispatcher.add_handler(CommandHandler('oiga', command_oiga), group=40)
+    # this one needs to be async because we call an external program and we wait for it to die.
+    dispatcher.add_handler(CommandHandler('calc', command_calc, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('stats', command_stats), group=40)
     dispatcher.add_handler(CommandHandler('normalize', command_normalize), group=40)
     dispatcher.add_handler(CommandHandler('restart', command_restart), group=40)
     dispatcher.add_handler(CommandHandler('debug', command_debug), group=40)
+    dispatcher.add_handler(CommandHandler('flush', command_flush), group=40)
     dispatcher.add_handler(CommandHandler('info', command_info), group=40)
     dispatcher.add_handler(CommandHandler('text', command_text), group=40)
     dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)

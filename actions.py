@@ -29,6 +29,9 @@ class Actions:
                 context=(chat_id, dict(self.pending_actions)[chat_id])
             )
 
+    def flush(self):
+        self.pending_actions = []
+
     def cron(self, _):
         """checks which chats have pending actions (typing/sending photo) and
         sends them"""
@@ -38,8 +41,5 @@ class Actions:
 
     def dump(self) -> str:
         if self.pending_actions:
-            return 'pending actions: %s\nunique: %s' % (
-                self.pending_actions,
-                dict(self.pending_actions)
-            )
+            return f'pending actions: {self.pending_actions}'
         return 'no pending actions'
