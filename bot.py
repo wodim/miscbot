@@ -6,6 +6,8 @@ import pprint
 import signal
 import threading
 
+from nltk.corpus import stopwords
+from nltk.stem import SnowballStemmer
 from telegram import Bot, Update
 from telegram.constants import PARSEMODE_HTML
 from telegram.ext import (CallbackContext, CommandHandler, DispatcherHandlerStop,
@@ -15,6 +17,7 @@ from telegram.utils.request import Request
 from _4chan import cron_4chan, command_thread
 from actions import Actions
 from calc import command_calc
+from commands_chatbot import command_chatbot
 from commands_distort import command_distort, command_distort_caption, command_invert
 from commands_text import command_fortune, command_tip, command_oiga
 from commands_translate import command_scramble, command_translate
@@ -23,12 +26,13 @@ from relay import (command_relay_chat_photo, command_relay_text, command_relay_p
                    cron_delete)
 from translate import TranslateWorkerThread
 from utils import (_config, ellipsis, get_command_args, get_relays,
-                   is_admin, send_admin_message)
+                   is_admin, remove_punctuation, send_admin_message)
 
 
 log_semaphore = threading.Semaphore()
 def command_log(update: Update, context: CallbackContext) -> None:
-    """logs a pickled representation of every update message to a file"""
+    """logs a pickled representation of every update message to a file.
+    then a stemmed version of every text message to another file."""
     with log_semaphore:
         with open('log.pickle', 'ab') as fp:
             pickle.dump(update.to_dict(), fp)
@@ -36,6 +40,16 @@ def command_log(update: Update, context: CallbackContext) -> None:
                 fp.write(b'\xff\x00__SENTINEL__\x00\xff')
             except OSError as exc:
                 send_admin_message(context.bot, str(exc))
+        if hasattr(update.message, 'text') and update.message.text:
+            with open(f'chat{update.message.chat.id}.txt', 'at', encoding='utf8') as fp:
+                result = []
+                for token in remove_punctuation(update.message.text.replace('\n', ' ').lower()).split(' '):
+                    stemmed = context.bot_data['stemmer'].stem(token)
+                    if stemmed not in context.bot_data['stopwords']:
+                        result.append(stemmed)
+                result = ' '.join([x for x in result if len(x) > 1])
+                if len(result) > 0:
+                    print(result + '\t' + update.message.text.replace('\n', ' '), file=fp)
 
 
 def command_normalize(update: Update, _: CallbackContext) -> None:
@@ -74,7 +88,7 @@ def command_flush(update: Update, _: CallbackContext) -> None:
         update.message.reply_animation(_config('error_animation'))
 
 
-def command_catchall(update: Update, _: CallbackContext) -> None:
+def command_unhandled(update: Update, _: CallbackContext) -> None:
     """handles unknown commands"""
     update.message.reply_animation(_config('error_animation'))
 
@@ -126,18 +140,35 @@ def command_answer(update: Update, context: CallbackContext) -> None:
     if not update.message or not update.message.text:
         return
     with open('triggers.txt', 'rt', encoding='utf8') as fp:
-        triggers = [x.split('|') for x in fp.readlines()]
+        triggers = [x.split('\t') for x in fp.readlines()]
     for trigger, answer in triggers:
         if update.message.text.lower() == trigger.lower():
             context.bot.send_message(update.message.chat.id, answer)
             raise DispatcherHandlerStop()
 
 
+def command_haiku(update: Update, context: CallbackContext) -> None:
+    """detects haikus sent by group members and formats them"""
+    if not update.message or not update.message.text:
+        return
+    text = update.message.text
+    while '  ' in text:
+        text = text.replace('  ', ' ')
+    if text.count(' ') != 16:
+        return
+    parts = TranslateWorkerThread.capitalize(text).split(' ')
+    text = ' '.join(parts[:5]) + '\n' + ' '.join(parts[5:12]) + '\n' + ' '.join(parts[12:])
+    if not text.endswith('.') and not text.endswith('?') and not text.endswith('!'):
+        text += '.'
+    context.bot.send_message(update.message.chat.id, text)
+
+
 if __name__ == '__main__':
     # connection pool size is workers + updater + dispatcher + job queue + main thread
-    request = Request(con_pool_size=20)
+    NUM_THREADS = 16
+    request = Request(con_pool_size=NUM_THREADS + 4)
     bot = Bot(_config('token'), request=request)
-    updater = Updater(bot=bot, workers=16)
+    updater = Updater(bot=bot, workers=NUM_THREADS)
 
     message_history = MessageHistory()
     actions = Actions(bot, updater.dispatcher.job_queue)
@@ -147,16 +178,22 @@ if __name__ == '__main__':
     dispatcher.bot_data.update({
         'message_history': message_history,
         'actions': actions,
+        'me': bot.get_me(),
+        'stemmer': SnowballStemmer(_config('chatbot_language')),
     })
+    dispatcher.bot_data['stopwords'] = list(set([
+        dispatcher.bot_data['stemmer'].stem(x) for x in stopwords.words(_config('chatbot_language'))
+    ]))
 
     # very low group id so it runs even for banned users
-    dispatcher.add_handler(MessageHandler(Filters.chat_type.groups, command_log, run_async=True), group=-999)
+    # can't run asynchronously or the log file can get corrupted
+    dispatcher.add_handler(MessageHandler(Filters.chat_type.groups, command_log), group=-999)
 
     # relays
     sources = get_relays().keys()
     dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.text & ~Filters.command & Filters.update.message,
                                           command_relay_text, run_async=True), group=-20)
-    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.photo & Filters.update.message,
+    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & (Filters.photo | Filters.sticker) & Filters.update.message,
                                           command_relay_photo, run_async=True), group=-20)
     dispatcher.add_handler(MessageHandler(Filters.chat(sources) & (Filters.status_update.new_chat_photo |
                                                                    Filters.status_update.delete_chat_photo),
@@ -169,6 +206,8 @@ if __name__ == '__main__':
     dispatcher.add_handler(MessageHandler(Filters.text, command_answer), group=30)
 
     # commands
+    dispatcher.add_handler(CommandHandler('help', command_fortune), group=40)
+    dispatcher.add_handler(CommandHandler('start', command_fortune), group=40)
     dispatcher.add_handler(CommandHandler('fortune', command_fortune), group=40)
     dispatcher.add_handler(CommandHandler('tip', command_tip), group=40)
     dispatcher.add_handler(CommandHandler('oiga', command_oiga), group=40)
@@ -194,13 +233,19 @@ if __name__ == '__main__':
     # responses in private
     dispatcher.add_handler(MessageHandler((Filters.text | Filters.poll) & ~Filters.command & Filters.chat_type.private,
                                           command_scramble, run_async=True), group=40)
-    dispatcher.add_handler(MessageHandler((Filters.photo | Filters.animation | Filters.video) & ~Filters.command & Filters.chat_type.private,
+    dispatcher.add_handler(MessageHandler((Filters.photo | Filters.animation | Filters.video | Filters.sticker) & ~Filters.command & Filters.chat_type.private,
                                           command_distort, run_async=True), group=40)
-    dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_catchall, run_async=True), group=40)
+    dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_unhandled, run_async=True), group=40)
+
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.update.message & Filters.chat_type.groups,
+                                          command_chatbot, run_async=True), group=50)
+
+    # dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.update.message & Filters.chat_type.groups,
+    #                                       command_haiku, run_async=True), group=60)
 
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
-    dispatcher.job_queue.run_repeating(actions.cron, interval=4)
+    dispatcher.job_queue.run_repeating(actions.cron, interval=3)
 
     first_cron = datetime.datetime.now().astimezone()
     if first_cron.hour % 2 == 0:
@@ -211,6 +256,18 @@ if __name__ == '__main__':
     print('first cron scheduled for %s' % first_cron.isoformat())
     dispatcher.job_queue.run_repeating(cron_4chan, first=first_cron,
                                        interval=60 * 60 * 2)
+
+    bot.set_my_commands([
+        ('tip',          '📞'),
+        ('fortune',      '🥠'),
+        ('translate',    '㊙️'),
+        ('scramble',     '🎲'),
+        ('distort',      '🔨'),
+        ('oiga',         '❗️'),
+        ('stats',        '📊'),
+        ('thread',       '🍀'),
+        ('calc',         '🧮'),
+    ])
 
     # Start the Bot
     updater.start_polling()

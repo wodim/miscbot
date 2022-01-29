@@ -24,19 +24,18 @@ class _4chan:
 
     @staticmethod
     def _download_file(url, name):
-        target = 'tmp/%s' % name
-        if os.path.exists(target):
-            return target
+        if os.path.exists(name):
+            return name
 
         if url.startswith('//'):
             url = 'https:' + url
-        logger.info('downloading from %s to %s', url, target)
+        logger.info('downloading from %s to %s', url, name)
         with requests.get(url, stream=True) as r:
-            with open(target, 'wb') as f:
+            with open(name, 'wb') as f:
                 shutil.copyfileobj(r.raw, f)
         logger.info('done downloading from %s', url)
 
-        return target
+        return name
 
     @staticmethod
     def _soup_to_text(soup):
@@ -127,7 +126,7 @@ def command_thread(update: Update, context: CallbackContext) -> None:
         raise
 
 
-FFMPEG_CMD = "ffmpeg -hide_banner -i '{source}' -preset veryfast '{dest}'"
+FFMPEG_CMD = "ffmpeg -hide_banner -i '{source}' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -preset veryfast '{dest}'"
 def _webm_convert(file: str) -> str:
     """converts a webm to a mp4 file"""
     new_file = file + '.mp4'
@@ -138,6 +137,8 @@ def _webm_convert(file: str) -> str:
     subprocess.call(FFMPEG_CMD.format(source=file, dest=new_file), shell=True)
     if not os.path.exists(new_file) or os.path.getsize(new_file) == 0:
         raise RuntimeError("for some reason, %s wasn't created" % new_file)
+
+    os.remove(file)
 
     return new_file
 
@@ -181,6 +182,8 @@ def post_thread(chat_id: int, context: CallbackContext, args: list = None) -> No
             fun = context.bot.send_photo
         with open(thread['image_file'], 'rb') as fp:
             fun(chat_id, fp)
+
+    os.remove(thread['image_file'])
 
     context.bot.send_message(chat_id, '%s' % text,
                              parse_mode=PARSEMODE_MARKDOWN_V2,

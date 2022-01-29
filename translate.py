@@ -1,12 +1,14 @@
 import json
+import os
 import queue
+import subprocess
 import threading
 import unicodedata
 
 import emoji
 import requests
 
-from utils import _config, logger
+from utils import _config, get_random_string, logger
 
 
 class TranslatorException(Exception): pass
@@ -138,6 +140,18 @@ class TranslateWorkerThread(threading.Thread):
 
 
 def translate(text, languages):
+    # use the new translator if available
+    if os.path.exists('translate-ng'):
+        filename = 'translate_tmp_' + get_random_string(16) + '.txt'
+        with open(filename, 'wt', newline='', encoding='utf8') as fp:
+            print(TranslateWorkerThread.clean_up(text), file=fp)
+        subprocess.call(['./translate-ng', filename, ','.join(languages)])
+        with open(filename, 'rt', newline='', encoding='utf8') as fp:
+            results = fp.read().split('__TRANSLATE_NG_SENTINEL__')[:-1]
+        it = iter(results)
+        os.remove(filename)
+        return results[-2], list(zip(it, it))
+
     result_q = queue.Queue()
 
     with open('proxies.txt', 'rt', encoding='utf8') as fp:

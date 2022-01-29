@@ -13,7 +13,7 @@ from utils import _config, ellipsis, get_command_args, logger, remove_command
 def sub_translate(text, languages):
     """translate, or else"""
     while True:
-        logger.info('Translating %s...%s "%s"', languages[0], languages[-1], ellipsis(text, 6))
+        logger.info('Translating %s "%s"', '->'.join(languages), ellipsis(text, 6))
         try:
             return translate(text, languages)
         except:
@@ -54,10 +54,10 @@ def command_translate(update: Update, context: CallbackContext) -> None:
     all_languages = sorted([x.strip() for x in _config('all_languages').split(',')])
 
     if lang_from not in all_languages + ['auto']:
-        update.message.reply_text('Invalid source language "%s" provided.' % lang_from)
+        update.message.reply_text(f'Invalid source language "{lang_from}" provided.')
         return
     if lang_to not in all_languages:
-        update.message.reply_text('Invalid target language "%s" provided.' % lang_to)
+        update.message.reply_text(f'Invalid target language "{lang_to}" provided.')
         return
 
     if not text or not text.strip():
@@ -76,8 +76,7 @@ def command_translate(update: Update, context: CallbackContext) -> None:
     finally:
         context.bot_data['actions'].remove(update.message.chat_id, ChatAction.TYPING)
 
-    message = update.message.reply_to_message or update.message
-    message.reply_text(ellipsis(translation, 4000), disable_web_page_preview=True)
+    update.message.reply_text(ellipsis(translation, 4000), disable_web_page_preview=True)
 
 
 def get_scramble_languages() -> list[str]:
@@ -108,5 +107,4 @@ def command_scramble(update: Update, context: CallbackContext) -> None:
     finally:
         context.bot_data['actions'].remove(update.message.chat_id, ChatAction.TYPING)
 
-    message = update.message.reply_to_message or update.message
-    message.reply_text(ellipsis(scrambled, 4000), disable_web_page_preview=True)
+    update.message.reply_text(ellipsis(scrambled, 4000), disable_web_page_preview=True)

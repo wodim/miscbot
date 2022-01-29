@@ -25,8 +25,13 @@ def command_relay_photo(update: Update, context: CallbackContext) -> None:
     scrambles the caption if any and sends to the matching channel"""
     context.bot_data['message_history'].push(update.message)
 
-    filename = context.bot.get_file(update.message.photo[-1]).download()
-    distorted_filename = sub_distort(filename, None, 40)
+    if update.message.sticker and not update.message.sticker.is_animated:
+        filename = context.bot.get_file(update.message.sticker.file_id).\
+            download(custom_path=get_random_string(12) + '.jpg')
+    else:
+        filename = context.bot.get_file(update.message.photo[-1]).\
+            download(custom_path=get_random_string(12) + '.jpg')
+    distorted_filename = sub_distort(filename, scale=40)
 
     text, trace = None, None
     if update.message.caption:
@@ -43,6 +48,7 @@ def command_relay_photo(update: Update, context: CallbackContext) -> None:
 
 
 def command_relay_chat_photo(update: Update, context: CallbackContext) -> None:
+    """executed every time the chat picture is changed or removed in a relayed group"""
     relay_channel, trace_channel = get_relays()[update.message.chat_id]
 
     if update.message.delete_chat_photo:
@@ -55,10 +61,10 @@ def command_relay_chat_photo(update: Update, context: CallbackContext) -> None:
         filename = context.bot.get_file(update.message.new_chat_photo[-1]).\
             download(custom_path=get_random_string(12) + '.jpg')
 
-    distorted_filename = sub_distort(filename, None, 40)
+    distorted_filename = sub_distort(filename, scale=40)
 
     if trace_channel:
-        inverted_filename = sub_invert(filename)
+        inverted_filename = sub_invert(distorted_filename)
         context.bot.set_chat_photo(trace_channel, open(inverted_filename, 'rb'))
         os.remove(inverted_filename)
 

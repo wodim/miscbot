@@ -1,6 +1,7 @@
 from glob import glob
 import os
 import re
+from shutil import copy2
 import subprocess
 import threading
 
@@ -19,20 +20,19 @@ wand_semaphore = threading.Semaphore(int(_config('max_concurrent_distorts')))
 
 def sub_distort(source: str, output: str = '', scale: float = -1, dimension: str = '') -> str:
     """distorts an image. returns the file name of the distorted image."""
-    if not 0 < scale < 100:
-        scale = 60
-    if dimension not in ('h', 'w', '*'):
-        dimension = '*'
     if not output:
         output = 'distorted_' + source
+    if scale == 0:
+        copy2(source, output)
+        return output
+    if not 0 < scale < 100:
+        scale = 40
+    if dimension not in ('h', 'w', '*'):
+        dimension = '*'
 
     with wand_semaphore:
         img = Image(filename=source)
         w, h = img.width, img.height
-        if w % 2 != 0:
-            w += 1
-        if h % 2 != 0:
-            h += 1
         new_w = int(w * (1 - (scale / 100))) if dimension in ('*', 'w') else w
         new_h = int(w * (1 - (scale / 100))) if dimension in ('*', 'h') else h
         img.liquid_rescale(new_w, new_h)
@@ -63,14 +63,15 @@ def sub_invert(source: str, output: str = '') -> str:
 
 FFMPEG_CMD_GET_INFO = "ffprobe -v error -select_streams v:0 -count_packets -show_entries stream=nb_read_packets,avg_frame_rate,width,height -of csv=p=0 '{source}'"
 FFMPEG_CMD_HAS_AUDIO = "ffprobe -v error -select_streams a:0 -show_entries stream=index -of csv=p=0 '{source}'"
-FFMPEG_CMD_EXTRACT = "ffmpeg -hide_banner -i '{source}' -map 0:v:0 -q:v 2 '{prefix}-%06d." + DISTORT_FORMAT + "'"
-FFMPEG_CMD_COMPOSE = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
-FFMPEG_CMD_COMPOSE_WITH_AUDIO = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -i '{original}' -map 0:v -map 1:a -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
+FFMPEG_CMD_EXTRACT = "ffmpeg -hide_banner -i '{source}' -vsync vfr -map 0:v:0 -q:v 2 '{prefix}-%06d." + DISTORT_FORMAT + "'"
+FFMPEG_CMD_COMPOSE = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
+FFMPEG_CMD_COMPOSE_WITH_AUDIO = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -i '{original}' -map 0:v -map 1:a -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
 MIN_DISTORT = 0
 MAX_DISTORT = 80
 PHOTO_TO_GIF_FRAMES = 100
 RX_NUMBER = re.compile(r'\-\d{6}')
 def sub_distort_animation(filename: str) -> str:
+    """distorts an image into a video or a video"""
     def remap(x, in_min, in_max, out_min, out_max):
         return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
@@ -82,6 +83,7 @@ def sub_distort_animation(filename: str) -> str:
         output = subprocess.check_output(FFMPEG_CMD_GET_INFO.format(source=filename), shell=True).decode('utf8').strip()
         try:
             parts = output.split(',')
+            logger.info('parts -> %s', parts)
             width = int(parts[0])
             height = int(parts[1])
             fps = parts[2]
@@ -110,7 +112,8 @@ def sub_distort_animation(filename: str) -> str:
 
     distorted = []
     for i, frame in enumerate(frames):
-        distorted.append(sub_distort(frame, distorted_name(frame, i), remap(i, 0, len(frames) - 1, MIN_DISTORT, MAX_DISTORT)))
+        distorted.append(sub_distort(frame, distorted_name(frame, i),
+                                     scale=remap(i, 0, len(frames) - 1, MIN_DISTORT, MAX_DISTORT)))
 
     if has_audio:
         if subprocess.call(FFMPEG_CMD_COMPOSE_WITH_AUDIO.format(fps=fps, prefix=prefix, original=filename), shell=True) != 0:
@@ -130,14 +133,15 @@ def sub_distort_animation(filename: str) -> str:
 
 def command_distort(update: Update, context: CallbackContext) -> None:
     """handles the /distort command"""
+    text = None
     if update.message.photo:
         filename = context.bot.get_file(update.message.photo[-1]).\
             download(custom_path=get_random_string(12) + '.jpg')
-        text = update.message.caption or ''
+        text = update.message.caption
     elif update.message.reply_to_message and len(update.message.reply_to_message.photo):
         filename = context.bot.get_file(update.message.reply_to_message.photo[-1]).\
             download(custom_path=get_random_string(12) + '.jpg')
-        text = update.message.text or ''
+        text = update.message.text
     elif update.message.animation:
         filename = context.bot.get_file(update.message.animation.file_id).\
             download(custom_path=get_random_string(12) + '.mp4')
@@ -150,11 +154,19 @@ def command_distort(update: Update, context: CallbackContext) -> None:
     elif update.message.reply_to_message and update.message.reply_to_message.video:
         filename = context.bot.get_file(update.message.reply_to_message.video.file_id).\
             download(custom_path=get_random_string(12) + '.mp4')
+    elif update.message.sticker and not update.message.sticker.is_animated:
+        filename = context.bot.get_file(update.message.sticker.file_id).\
+            download(custom_path=get_random_string(12) + '.webp')
+    elif (update.message.reply_to_message and update.message.reply_to_message.sticker and
+              not update.message.reply_to_message.sticker.is_animated):
+        filename = context.bot.get_file(update.message.reply_to_message.sticker.file_id).\
+            download(custom_path=get_random_string(12) + '.webp')
+        text = update.message.text
     else:
-        update.message.reply_text('Nothing to distort. Upload or quote a photo or GIF.')
+        update.message.reply_text('Nothing to distort. Upload or quote a photo or GIF or non-animated sticker.')
         return
 
-    if filename.endswith('.jpg'):
+    if filename.endswith('.jpg') or filename.endswith('.webp'):
         command_distort_photo(update, context, filename, text)
     else:
         command_distort_animation(update, context, filename)
@@ -181,6 +193,7 @@ def command_invert(update: Update, context: CallbackContext) -> None:
 
 
 def command_distort_animation(update: Update, context: CallbackContext, filename: str) -> None:
+    """distorts and sends a video"""
     context.bot_data['actions'].append(update.message.chat_id, ChatAction.UPLOAD_VIDEO)
 
     try:
@@ -199,6 +212,7 @@ def command_distort_animation(update: Update, context: CallbackContext, filename
 
 
 def command_distort_photo(update: Update, context: CallbackContext, filename: str, text: str) -> None:
+    """distorts and sends a photo as a photo or a video"""
     def parse_distort_params(params):
         dimension = '*'
         scale = -1
@@ -211,27 +225,41 @@ def command_distort_photo(update: Update, context: CallbackContext, filename: st
                 dimension = param
         return scale, dimension
 
-    params = remove_command(text).split(' ')
+    params = remove_command(text or '').split(' ')
 
     try:
         if 'gif' in params:
             context.bot_data['actions'].append(update.message.chat_id, ChatAction.UPLOAD_VIDEO)
+            if filename.endswith('.webp'):
+                new_filename = filename.replace('.webp', '.jpg')
+                os.rename(filename, new_filename)
+                filename = new_filename
             distorted_filename = sub_distort_animation(filename)
         else:
-            context.bot_data['actions'].append(update.message.chat_id, ChatAction.UPLOAD_PHOTO)
+            if filename.endswith('.webp'):
+                context.bot_data['actions'].append(update.message.chat_id, ChatAction.CHOOSE_STICKER)
+            else:
+                context.bot_data['actions'].append(update.message.chat_id, ChatAction.UPLOAD_PHOTO)
             distorted_filename = sub_distort(filename, None, *parse_distort_params(params))
     except Exception as exc:
         logger.exception('Error distorting')
-        update.message.reply_text('Error distorting: %s' % exc)
+        update.message.reply_text(f'Error distorting: {exc}')
         # the original is kept for troubleshooting
         return
     finally:
         if 'gif' in params:
             context.bot_data['actions'].remove(update.message.chat_id, ChatAction.UPLOAD_VIDEO)
+        elif filename.endswith('.webp'):
+            context.bot_data['actions'].remove(update.message.chat_id, ChatAction.CHOOSE_STICKER)
         else:
             context.bot_data['actions'].remove(update.message.chat_id, ChatAction.UPLOAD_PHOTO)
 
-    fun = update.message.reply_animation if 'gif' in params else update.message.reply_photo
+    if 'gif' in params:
+        fun = update.message.reply_animation
+    elif filename.endswith('.webp'):
+        fun = update.message.reply_sticker
+    else:
+        fun = update.message.reply_photo
     with open(distorted_filename, 'rb') as fp:
         fun(fp)
 

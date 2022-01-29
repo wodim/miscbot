@@ -89,3 +89,7 @@ def send_admin_message(bot, text: str) -> None:
 
 def get_random_string(l):
     return ''.join(random.choices(string.ascii_lowercase + string.digits, k=l))
+
+
+def remove_punctuation(s):
+    return s.translate(str.maketrans('', '', string.punctuation + '¿¡“”«»'))
