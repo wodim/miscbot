@@ -17,15 +17,14 @@ from telegram.utils.request import Request
 from _4chan import cron_4chan, command_thread
 from actions import Actions
 from calc import command_calc
-from commands_chatbot import command_chatbot
-from commands_distort import command_distort, command_distort_caption, command_invert
-from commands_text import command_fortune, command_tip, command_oiga
-from commands_translate import command_scramble, command_translate
+from chatbot import command_chatbot
+from distort import command_distort, command_distort_caption, command_invert
 from message_history import MessageHistory
 from relay import (command_relay_chat_photo, command_relay_text, command_relay_photo,
                    cron_delete)
-from translate import TranslateWorkerThread
-from utils import (_config, ellipsis, get_command_args, get_relays,
+from text import command_fortune, command_tip, command_oiga
+from translate import command_scramble, command_translate
+from utils import (_config, capitalize, clean_up, ellipsis, get_command_args, get_relays,
                    is_admin, remove_punctuation, send_admin_message)
 
 
@@ -55,7 +54,7 @@ def command_log(update: Update, context: CallbackContext) -> None:
 def command_normalize(update: Update, _: CallbackContext) -> None:
     """returns the text provided after the translate module has cleaned it up"""
     if text := get_command_args(update):
-        update.message.reply_text(ellipsis(TranslateWorkerThread.clean_up(text), 4000))
+        update.message.reply_text(ellipsis(clean_up(text), 4000))
     else:
         update.message.reply_text('Missing parameter or quote.')
 
@@ -156,7 +155,7 @@ def command_haiku(update: Update, context: CallbackContext) -> None:
         text = text.replace('  ', ' ')
     if text.count(' ') != 16:
         return
-    parts = TranslateWorkerThread.capitalize(text).split(' ')
+    parts = capitalize(text).split(' ')
     text = ' '.join(parts[:5]) + '\n' + ' '.join(parts[5:12]) + '\n' + ' '.join(parts[12:])
     if not text.endswith('.') and not text.endswith('?') and not text.endswith('!'):
         text += '.'

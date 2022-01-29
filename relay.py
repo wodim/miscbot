@@ -5,8 +5,8 @@ from telegram import Update
 from telegram.constants import PARSEMODE_HTML
 from telegram.ext import CallbackContext
 
-from commands_distort import sub_distort, sub_invert
-from commands_translate import get_scramble_languages, sub_translate
+from distort import sub_distort, sub_invert
+from translate import get_scramble_languages, sub_translate
 from utils import _config, ellipsis, get_random_string, get_relays, get_username
 
 

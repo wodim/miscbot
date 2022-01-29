@@ -15,7 +15,7 @@ def sub_get_reply(chat_id: int, input_: str, stemmer, stopwords) -> str:
         if keyword not in stopwords:
             input_keywords.append(keyword)
     if len(input_keywords) == 0:
-        return
+        return None
 
     with open(f'chat{chat_id}.txt', 'rt', encoding='utf8') as fp:
         last_line, last_score, next_line = None, 0, None
@@ -38,7 +38,7 @@ def sub_get_reply(chat_id: int, input_: str, stemmer, stopwords) -> str:
                 next_line = None
 
     if len(matches) == 0:
-        return
+        return None
     median = statistics.median([x[0] for x in matches])
     return random.choice([x[2] for x in matches if x[0] >= median and x[2]])
 

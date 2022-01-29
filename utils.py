@@ -3,6 +3,9 @@ import logging
 import random
 import re
 import string
+import unicodedata
+
+import emoji
 
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(message)s', level=logging.INFO)
@@ -93,3 +96,54 @@ def get_random_string(l):
 
 def remove_punctuation(s):
     return s.translate(str.maketrans('', '', string.punctuation + '¿¡“”«»'))
+
+
+def clean_up(text):
+    text = text.replace('\u200d', '').replace('\ufe0f', '')
+    text = ''.join([' ' + emoji_name(x) + ' '
+                    if x in emoji.UNICODE_EMOJI['en'] else x
+                    for x in text])
+    text = capitalize(text.strip())
+    while '  ' in text:
+        text = text.replace('  ', ' ')
+    text = '\n'.join([x.strip() for x in text.split('\n')])
+    return text
+
+def emoji_name(char):
+    try:
+        name = unicodedata.name(char)
+    except ValueError:
+        return char
+    if name == 'EMOJI MODIFIER FITZPATRICK TYPE-1-2':
+        return 'WHITE SKINNED'
+    if name == 'EMOJI MODIFIER FITZPATRICK TYPE-3':
+        return 'LIGHT BROWN SKINNED'
+    if name == 'EMOJI MODIFIER FITZPATRICK TYPE-4':
+        return 'MODERATE BROWN SKINNED'
+    if name == 'EMOJI MODIFIER FITZPATRICK TYPE-5':
+        return 'DARK BROWN SKINNED'
+    if name == 'EMOJI MODIFIER FITZPATRICK TYPE-6':
+        return 'BLACK SKINNED'
+    if name.startswith('EMOJI COMPONENT '):
+        return 'WITH ' + name.replace('EMOJI COMPONENT ', '')
+    if 'VARIATION SELECTOR' in name:
+        return ''
+    for x in ('MARK', 'SIGN'):
+        if name.endswith(' ' + x):
+            return name.replace(' ' + x, '')
+    return name
+
+def capitalize(text):
+    upper = True
+    output = ''
+    for char in text.lower():
+        if char.isalpha() and upper:
+            output += char.upper()
+            upper = False
+        else:
+            output += char
+        if char.isdigit() and upper:
+            upper = False
+        elif char in set('\t\n.?!'):
+            upper = True
+    return output

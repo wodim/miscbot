@@ -1,205 +1,121 @@
-import json
 import os
-import queue
+import random
+import re
 import subprocess
-import threading
-import unicodedata
 
-import emoji
-import requests
-
-from utils import _config, get_random_string, logger
+from telegram import ChatAction, Update
+from telegram.constants import PARSEMODE_HTML
+from telegram.ext import CallbackContext
 
 
-class TranslatorException(Exception): pass
-class UnrecoverableTranslatorException(Exception): pass
+from utils import (_config, clean_up, ellipsis, get_command_args,
+                   get_random_string, logger, remove_command)
 
 
-# https://eli.thegreenplace.net/2011/12/27/python-threads-communication-and-stopping
-class TranslateWorkerThread(threading.Thread):
-    def __init__(self, result_q, proxy, translation):
-        super().__init__()
-        self.result_q = result_q
-        self.stop_request = threading.Event()
-        self.text, self.languages = translation
-        self.session = requests.Session()
-        self.session.proxies.update(dict(http='http://' + proxy,
-                                         https='http://' + proxy))
-        self.session.headers.update({
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.9,es;q=0.8',
-            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-            'Origin': 'https://translate.google.com',
-            'Referer': 'https://translate.google.com/',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
-        })
-
-    def run(self):
-        source = self.languages.pop(0)
-        text = self.text
-        for language in self.languages:
-            try:
-                text = self.clean_up(text)
-                if self.stop_request.isSet():
-                    return
-                text = self.translate(text, source, language)
-                text = self.clean_up(text)
-                if self.stop_request.isSet():
-                    return
-                self.result_q.put((threading.get_ident(), (text, language)))
-                source = language
-            except:
-                # logger.info('Error translating "%s" from %s to %s', text, source, language)
-                self.result_q.put((threading.get_ident(), (None, language)))
-
-    def translate(self, text, lang_from, lang_to):
-        url = ('https://translate.googleapis.com/translate_a/single?client=gtx&'
-               'dt=t&ie=UTF-8&oe=UTF-8&otf=1&ssel=0&tsel=0&kc=7&dt=at&dt=bd&'
-               'dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss')
-        params = {'q': text, 'sl': lang_from, 'tl': lang_to}
-
-        response = None
-        for _ in range(int(_config('translate_http_retries'))):
-            try:
-                response = self.session.get(url, params=params,
-                                            timeout=int(_config('translate_http_timeout')))
-            except:
-                continue
-        if response is None:
-            raise TranslatorException('This proxy failed miserably')
-
-        if response.status_code == 429:
-            raise TranslatorException("I'm out of quota by now")
-        if response.status_code == 400:
-            raise UnrecoverableTranslatorException('You screwed up')
-
-        translation = ' '.join([str(x[0]) for x in
-                                json.loads(response.text)[0] if x[0]])
-
-        if len(translation.strip()) == 0:
-            raise TranslatorException('Empty translation received')
-
-        return translation
-
-    @staticmethod
-    def clean_up(text):
-        text = text.replace('\u200d', '').replace('\ufe0f', '')
-        text = ''.join([' ' + TranslateWorkerThread.emoji_name(x) + ' '
-                        if x in emoji.UNICODE_EMOJI['en'] else x
-                        for x in text])
-        text = TranslateWorkerThread.capitalize(text.strip())
-        while '  ' in text:
-            text = text.replace('  ', ' ')
-        text = '\n'.join([x.strip() for x in text.split('\n')])
-        return text
-
-    @staticmethod
-    def emoji_name(char):
-        try:
-            name = unicodedata.name(char)
-        except ValueError:
-            return char
-        if name == 'EMOJI MODIFIER FITZPATRICK TYPE-1-2':
-            return 'WHITE SKINNED'
-        if name == 'EMOJI MODIFIER FITZPATRICK TYPE-3':
-            return 'LIGHT BROWN SKINNED'
-        if name == 'EMOJI MODIFIER FITZPATRICK TYPE-4':
-            return 'MODERATE BROWN SKINNED'
-        if name == 'EMOJI MODIFIER FITZPATRICK TYPE-5':
-            return 'DARK BROWN SKINNED'
-        if name == 'EMOJI MODIFIER FITZPATRICK TYPE-6':
-            return 'BLACK SKINNED'
-        if name.startswith('EMOJI COMPONENT '):
-            return 'WITH ' + name.replace('EMOJI COMPONENT ', '')
-        if 'VARIATION SELECTOR' in name:
-            return ''
-        for x in ('MARK', 'SIGN'):
-            if name.endswith(' ' + x):
-                return name.replace(' ' + x, '')
-        return name
-
-    @staticmethod
-    def capitalize(text):
-        upper = True
-        output = ''
-        for char in text.lower():
-            if char.isalpha() and upper:
-                output += char.upper()
-                upper = False
-            else:
-                output += char
-            if char.isdigit() and upper:
-                upper = False
-            elif char in set('\t\n.?!'):
-                upper = True
-        return output
-
-    def join(self, timeout=None):
-        self.stop_request.set()
-        super().join(timeout)
-
-
-def translate(text, languages):
-    # use the new translator if available
-    if os.path.exists('translate-ng'):
-        filename = 'translate_tmp_' + get_random_string(16) + '.txt'
-        with open(filename, 'wt', newline='', encoding='utf8') as fp:
-            print(TranslateWorkerThread.clean_up(text), file=fp)
-        subprocess.call(['./translate-ng', filename, ','.join(languages)])
-        with open(filename, 'rt', newline='', encoding='utf8') as fp:
-            results = fp.read().split('__TRANSLATE_NG_SENTINEL__')[:-1]
-        it = iter(results)
-        os.remove(filename)
-        return results[-2], list(zip(it, it))
-
-    result_q = queue.Queue()
-
-    with open('proxies.txt', 'rt', encoding='utf8') as fp:
-        proxies = fp.read().strip().split('\n')
-    pool = [TranslateWorkerThread(result_q, proxy, (text, languages.copy()))
-            for proxy in proxies]
-
-    for thread in pool:
-        thread.start()
-
-    results = {}
+def sub_translate(text, languages):
+    """translate, or else"""
     while True:
-        result = result_q.get()
-        ident, args = result
-        text_, _ = args
+        logger.info('Translating %s "%s"', '->'.join(languages), ellipsis(text, 6))
+        try:
+            if os.path.exists('translate-ng'):
+                filename = 'translate_tmp_' + get_random_string(16) + '.txt'
+                with open(filename, 'wt', newline='', encoding='utf8') as fp:
+                    print(clean_up(text), file=fp)
+                subprocess.call(['./translate-ng', filename, ','.join(languages)])
+                with open(filename, 'rt', newline='', encoding='utf8') as fp:
+                    results = fp.read().split('__TRANSLATE_NG_SENTINEL__')[:-1]
+                it = iter(results)
+                os.remove(filename)
+                return results[-2], list(zip(it, it))
+        except:
+            pass
 
-        if ident not in results:
-            results[ident] = [(TranslateWorkerThread.clean_up(text), languages[0])]
-        results[ident].append(args)
 
-        if len(results[ident]) != len(languages):
-            # this thread hasn't finished its job yet.
-            continue
+RX_MULTI_LANG = re.compile(r'^([a-z]{2})\-([a-z]{2})(\s|$)', re.IGNORECASE)
+RX_SINGLE_LANG = re.compile(r'^([a-z]{2})(\s|$)', re.IGNORECASE)
+TRANSLATE_USAGE = """<b>Usage</b>
+/translate en-zh <i>Text to translate</i>
+/translate de <i>Text to translate</i> (source language is detected automatically)
+/translate <i>Text to translate</i> (source language is detected automatically; target defaults to <b>%s</b>)
+<i>Text to translate</i> can be omitted if you quote another message.
 
-        # we have finished, so stop and remove this thread from the pool
-        for thread in pool:
-            if thread.ident == ident:
-                thread.join(timeout=0)
-                pool.remove(thread)
-                break
+<b>Supported languages</b>
+"""
+def command_translate(update: Update, context: CallbackContext) -> None:
+    """handles the /translate command. somewhat complex because of all the cases
+    it needs to handle: omitting target or both languages, translating quoted
+    messages..."""
+    text = get_command_args(update)
 
-        # check if all translations made by this thread succeeded
-        if all((x for x, _ in results[ident])):
-            # if that is the case, kill the rest of threads and return early.
-            for thread in pool:
-                thread.join(timeout=0)
-            return text_, results[ident]
+    lang_from, lang_to = 'auto', _config('default_language')
+    if not context.args:
+        # there are no parameters to the command so use default options
+        pass
+    elif matches := RX_MULTI_LANG.match(remove_command(update.message.text)):
+        lang_from, lang_to = matches[1], matches[2]
+        text = RX_MULTI_LANG.sub('', text)
+    elif matches := RX_SINGLE_LANG.match(remove_command(update.message.text)):
+        lang_from, lang_to = 'auto', matches[1]
+        text = RX_SINGLE_LANG.sub('', text)
 
-        if len(pool) == 0:
-            # there are no more threads left, so pick the best translation
-            # available. first we have to remove threads that failed to
-            # translate back to the source language.
-            valid = [x for x in results.values() if x[-1][0]]
-            # if there are no valid translations, bail out.
-            if not valid:
-                raise TranslatorException("With this translator's failure, the thread of prophecy is severed. Issue the same command again to restore the weave of fate, or persist in the doomed, untranslated world you have created.")
-            # then sort the results by the amount of translations done and
-            # return the results of the thread that managed to perform a
-            # greater amount of translations.
-            best = sorted(valid, key=lambda ident: len([x for x, _ in ident if x]), reverse=True)
-            return best[0][-1][0], best[0]
+    if lang_from == lang_to:
+        update.message.reply_text("Source and target languages can't be the same.")
+        return
+
+    all_languages = sorted([x.strip() for x in _config('all_languages').split(',')])
+
+    if lang_from not in all_languages + ['auto']:
+        update.message.reply_text(f'Invalid source language "{lang_from}" provided.')
+        return
+    if lang_to not in all_languages:
+        update.message.reply_text(f'Invalid target language "{lang_to}" provided.')
+        return
+
+    if not text or not text.strip():
+        update.message.reply_text((TRANSLATE_USAGE % _config('default_language')
+                                   + ', '.join(all_languages)),
+                                  parse_mode=PARSEMODE_HTML)
+        return
+
+    context.bot_data['actions'].append(update.message.chat_id, ChatAction.TYPING)
+
+    try:
+        translation, _ = sub_translate(text, [lang_from, lang_to])
+    except Exception as exc:
+        update.message.reply_text('Error: ' + str(exc))
+        return
+    finally:
+        context.bot_data['actions'].remove(update.message.chat_id, ChatAction.TYPING)
+
+    update.message.reply_text(ellipsis(translation, 4000), disable_web_page_preview=True)
+
+
+def get_scramble_languages() -> list[str]:
+    """returns a random list of languages to be used by the translator to
+    scramble text"""
+    languages = [x.strip() for x in _config('scrambler_languages').split(',')]
+    random.shuffle(languages)
+    return (['auto'] +
+            languages[:int(_config('scrambler_languages_count'))] +
+            [_config('default_language')])
+
+
+def command_scramble(update: Update, context: CallbackContext) -> None:
+    """handles the /scramble command."""
+    text = get_command_args(update)
+
+    if not text:
+        update.message.reply_text('Scramble what? Type something or quote another message.')
+        return
+
+    context.bot_data['actions'].append(update.message.chat_id, ChatAction.TYPING)
+
+    try:
+        scrambled, _ = sub_translate(text, get_scramble_languages())
+    except Exception as exc:
+        update.message.reply_text('Error: ' + str(exc))
+        return
+    finally:
+        context.bot_data['actions'].remove(update.message.chat_id, ChatAction.TYPING)
+
+    update.message.reply_text(ellipsis(scrambled, 4000), disable_web_page_preview=True)
