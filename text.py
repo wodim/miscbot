@@ -40,8 +40,8 @@ def command_fortune(update: Update, context: CallbackContext) -> None:
     """handles the /fortune command, which prints a random fortune or a list of
     a max of MAX_FORTUNE_RESULTS that match the parameter"""
     def msg(text):
-        context.bot.send_message(update.message.chat_id, ellipsis(text, 4000),
-                                 disable_web_page_preview=True)
+        update.message.reply_text(ellipsis(text, 4000),
+                                  disable_web_page_preview=True, quote=False)
     if context.args:
         if fortunes := list(search_fortunes(' '.join(context.args))):
             for fortune in fortunes:
@@ -54,13 +54,11 @@ def command_fortune(update: Update, context: CallbackContext) -> None:
 
 def command_tip(update: Update, context: CallbackContext) -> None:
     """handles the /tip command"""
-    context.bot.send_message(update.message.chat_id,
-                             get_random_line('tips.txt'),
-                             disable_web_page_preview=True)
+    update.message.reply_text(get_random_line('tips.txt'),
+                              disable_web_page_preview=True, quote=False)
 
 
 def command_oiga(update: Update, context: CallbackContext) -> None:
     """handles the /oiga command"""
-    context.bot.send_message(update.message.chat_id,
-                             get_random_line('oiga.txt'),
-                             disable_web_page_preview=True)
+    update.message.reply_text(get_random_line('oiga.txt'),
+                              disable_web_page_preview=True, quote=False)

@@ -142,7 +142,7 @@ def command_answer(update: Update, context: CallbackContext) -> None:
         triggers = [x.split('\t') for x in fp.readlines()]
     for trigger, answer in triggers:
         if update.message.text.lower() == trigger.lower():
-            context.bot.send_message(update.message.chat.id, answer)
+            update.message.chat.id(answer, quote=False)
             raise DispatcherHandlerStop()
 
 
@@ -159,7 +159,7 @@ def command_haiku(update: Update, context: CallbackContext) -> None:
     text = ' '.join(parts[:5]) + '\n' + ' '.join(parts[5:12]) + '\n' + ' '.join(parts[12:])
     if not text.endswith('.') and not text.endswith('?') and not text.endswith('!'):
         text += '.'
-    context.bot.send_message(update.message.chat.id, text)
+    update.message.chat.id(text, quote=False)
 
 
 if __name__ == '__main__':
@@ -252,7 +252,6 @@ if __name__ == '__main__':
     else:
         first_cron += datetime.timedelta(hours=1)
     first_cron = first_cron.replace(minute=0, second=0, microsecond=0)
-    print('first cron scheduled for %s' % first_cron.isoformat())
     dispatcher.job_queue.run_repeating(cron_4chan, first=first_cron,
                                        interval=60 * 60 * 2)
 

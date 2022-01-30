@@ -21,10 +21,10 @@ def command_calc(update: Update, context: CallbackContext) -> None:
         return
     statement = RX_WHITESPACE.sub('', text)
     if statement == '1+1':
-        context.bot.send_message(update.message.chat.id, text + ' = 7')
+        update.message.reply_text(text + ' = 7', quote=False)
         return
     if statement == '2+2':
-        context.bot.send_message(update.message.chat.id, text + ' = 5')
+        update.message.reply_text(text + ' = 5', quote=False)
         return
     statement = text.replace('cos(', 'c(').\
                      replace('sin(', 's(').\
@@ -40,16 +40,16 @@ def command_calc(update: Update, context: CallbackContext) -> None:
             stdout = stdout.decode('utf8').strip().replace('\\\n', '')
             stderr = stderr.decode('utf8').strip().replace('\\\n', '')
         except subprocess.TimeoutExpired:
-            context.bot.send_message(update.message.chat.id, 'Timeout.')
+            update.message.reply_text('Timeout.', quote=False)
             proc.kill()
 
         if stderr:
-            context.bot.send_message(update.message.chat.id, 'Error: ' + stderr)
+            update.message.reply_text('Error: ' + stderr, quote=False)
         elif stdout:
             if '.' in stdout:
                 stdout = RX_TRAILING_ZEROS.sub('', stdout)
             nag = '. Seems obvious.' if statement == stdout else ''
-            context.bot.send_message(update.message.chat.id, ellipsis('%s = %s%s' % (text, stdout, nag), 4096))
+            update.message.reply_text(ellipsis('%s = %s%s' % (text, stdout, nag), 4096), quote=False)
         else:
-            context.bot.send_message(update.message.chat.id, 'Something came up.')
+            update.message.reply_text('Something came up.', quote=False)
         proc.wait()

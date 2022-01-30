@@ -122,7 +122,7 @@ def command_thread(update: Update, context: CallbackContext) -> None:
     try:
         post_thread(update.message.chat_id, context, context.args)
     except Exception as exc:
-        context.bot.send_message(update.message.chat_id, repr(exc))
+        update.message.reply_text(repr(exc), quote=False)
         raise
 
 
@@ -177,7 +177,7 @@ def post_thread(chat_id: int, context: CallbackContext, args: list = None) -> No
         if thread['image_url'].endswith('.webm'):
             thread['image_file'] = _webm_convert(thread['image_file'])
         if thread['image_url'].endswith('.gif') or thread['image_url'].endswith('.webm'):
-            fun = context.bot.send_document
+            fun = context.bot.send_video
         else:
             fun = context.bot.send_photo
         with open(thread['image_file'], 'rb') as fp:

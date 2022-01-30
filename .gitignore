@@ -14,8 +14,6 @@
 /parser.py
 /translate-ng
 /chat-*.txt
-/trainer_text.py
-/trainer_train.py
-/trainer_benchmark.py
 /triggers.txt
 /translate_tmp_*.txt
+/trainer_*.py

@@ -7,7 +7,7 @@ from telegram.ext import CallbackContext
 
 from distort import sub_distort, sub_invert
 from translate import get_scramble_languages, sub_translate
-from utils import _config, ellipsis, get_random_string, get_relays, get_username
+from utils import _config, ellipsis, get_random_string, get_relays, get_user_fullname
 
 
 def command_relay_text(update: Update, context: CallbackContext) -> None:
@@ -92,15 +92,15 @@ def send_relayed_message(update: Update, context: CallbackContext,
                                 for text, language in trace])
         trace_message = context.bot.send_message(
             trace_channel,
-            '<b>%s</b>\n%s' % (html.escape(get_username(update)), ellipsis(trace_text, 3900)),
+            '<b>%s</b>\n%s' % (html.escape(get_user_fullname(update)), ellipsis(trace_text, 3900)),
             parse_mode=PARSEMODE_HTML, disable_web_page_preview=True
         )
         message_text = ('<b>%s</b> <a href="%s">[source]</a> <a href="%s">[trace]</a>\n%s' %
-                        (html.escape(get_username(update)), update.message.link, trace_message.link,
+                        (html.escape(get_user_fullname(update)), update.message.link, trace_message.link,
                          html.escape(ellipsis(text or '', 900 if photo_fp else 3900))))
     else:
         message_text = ('<b>%s</b> <a href="%s">[source]</a>\n%s' %
-                        (html.escape(get_username(update)), update.message.link,
+                        (html.escape(get_user_fullname(update)), update.message.link,
                          html.escape(ellipsis(text or '', 900 if photo_fp else 3900))))
 
     if photo_fp:

@@ -52,11 +52,18 @@ def command_chatbot(update: Update, context: CallbackContext) -> None:
              update.message.reply_to_message.from_user.id == context.bot_data['me'].id)):
         return
 
+    if update.message.reply_to_message and update.message.reply_to_message.text:
+        text = update.message.reply_to_message.text
+    elif update.message.text:
+        text = update.message.text
+    else:
+        update.message.reply_text('?')
+
     context.bot_data['actions'].append(update.message.chat_id, ChatAction.TYPING)
 
     try:
         reply = sub_get_reply(update.message.chat_id,
-                              update.message.text.replace(my_username, ''),
+                              text.replace(my_username, ''),
                               context.bot_data['stemmer'],
                               context.bot_data['stopwords']) or '?'
         update.message.reply_text(reply)

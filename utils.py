@@ -34,10 +34,11 @@ def remove_command(message: str) -> str:
     return rx_command.sub('', message).strip()
 
 
-def get_username(update) -> str:
+def get_user_fullname(update) -> str:
+    """get this user's first + last name"""
     if update.message.from_user.last_name:
-        return '%s %s' % (update.message.from_user.first_name,
-                          update.message.from_user.last_name)
+        return (f'{update.message.from_user.first_name}'
+                f'{update.message.from_user.last_name}')
     return update.message.from_user.first_name
 
 
@@ -53,14 +54,14 @@ def get_random_line(filename: str) -> str:
         return random.choice(fp.readlines())
 
 
-def get_command_args(update) -> str:
+def get_command_args(update, use_quote: bool = True) -> str:
     def poll_to_text(poll):
         text = poll.question
         for option in poll.options:
             text += '\n• ' + option.text
         return text
 
-    if update.message.reply_to_message:
+    if use_quote and update.message.reply_to_message:
         if update.message.reply_to_message.text:
             return update.message.reply_to_message.text.strip()
         if update.message.reply_to_message.caption:
@@ -109,6 +110,7 @@ def clean_up(text):
     text = '\n'.join([x.strip() for x in text.split('\n')])
     return text
 
+
 def emoji_name(char):
     try:
         name = unicodedata.name(char)
@@ -132,6 +134,7 @@ def emoji_name(char):
         if name.endswith(' ' + x):
             return name.replace(' ' + x, '')
     return name
+
 
 def capitalize(text):
     upper = True

@@ -45,7 +45,7 @@ def command_translate(update: Update, context: CallbackContext) -> None:
     """handles the /translate command. somewhat complex because of all the cases
     it needs to handle: omitting target or both languages, translating quoted
     messages..."""
-    text = get_command_args(update)
+    text = get_command_args(update, use_quote=update.message.text.startswith('/translate'))
 
     lang_from, lang_to = 'auto', _config('default_language')
     if not context.args:
@@ -102,7 +102,7 @@ def get_scramble_languages() -> list[str]:
 
 def command_scramble(update: Update, context: CallbackContext) -> None:
     """handles the /scramble command."""
-    text = get_command_args(update)
+    text = get_command_args(update, use_quote=update.message.text.startswith('/scramble'))
 
     if not text:
         update.message.reply_text('Scramble what? Type something or quote another message.')
