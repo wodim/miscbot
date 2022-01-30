@@ -134,7 +134,7 @@ def callback_all(update: Update, _: CallbackContext) -> None:
         raise DispatcherHandlerStop()
 
 
-def command_answer(update: Update, context: CallbackContext) -> None:
+def command_trigger(update: Update, context: CallbackContext) -> None:
     """replies to some text triggers and stops handling"""
     if not update.message or not update.message.text:
         return
@@ -142,7 +142,7 @@ def command_answer(update: Update, context: CallbackContext) -> None:
         triggers = [x.split('\t') for x in fp.readlines()]
     for trigger, answer in triggers:
         if update.message.text.lower() == trigger.lower():
-            update.message.chat.id(answer, quote=False)
+            update.message.reply_text(answer, quote=False)
             raise DispatcherHandlerStop()
 
 
@@ -159,7 +159,7 @@ def command_haiku(update: Update, context: CallbackContext) -> None:
     text = ' '.join(parts[:5]) + '\n' + ' '.join(parts[5:12]) + '\n' + ' '.join(parts[12:])
     if not text.endswith('.') and not text.endswith('?') and not text.endswith('!'):
         text += '.'
-    update.message.chat.id(text, quote=False)
+    update.message.reply_text(text, quote=False)
 
 
 if __name__ == '__main__':
@@ -202,7 +202,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(TypeHandler(Update, callback_all), group=-10)
 
     # automated responses
-    dispatcher.add_handler(MessageHandler(Filters.text, command_answer), group=30)
+    dispatcher.add_handler(MessageHandler(Filters.text, command_trigger), group=30)
 
     # commands
     dispatcher.add_handler(CommandHandler('help', command_fortune), group=40)
