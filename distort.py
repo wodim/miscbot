@@ -1,9 +1,11 @@
 from glob import glob
 import os
+import random
 import re
 from shutil import copy2
 import subprocess
 import threading
+from time import time
 
 from telegram import ChatAction, Update
 from telegram.ext import CallbackContext
@@ -65,12 +67,12 @@ FFMPEG_CMD_GET_INFO = "ffprobe -v error -select_streams v:0 -count_packets -show
 FFMPEG_CMD_HAS_AUDIO = "ffprobe -v error -select_streams a:0 -show_entries stream=index -of csv=p=0 '{source}'"
 FFMPEG_CMD_EXTRACT = "ffmpeg -hide_banner -i '{source}' -vsync vfr -map 0:v:0 -q:v 2 '{prefix}-%06d." + DISTORT_FORMAT + "'"
 FFMPEG_CMD_COMPOSE = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
-FFMPEG_CMD_COMPOSE_WITH_AUDIO = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -i '{original}' -map 0:v -map 1:a -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
+FFMPEG_CMD_COMPOSE_WITH_AUDIO = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -i '{original}' -map 0:v -map 1:a -af 'vibrato=d=1,vibrato=d=1' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
 MIN_DISTORT = 0
 MAX_DISTORT = 80
 PHOTO_TO_GIF_FRAMES = 100
 RX_NUMBER = re.compile(r'\-\d{6}')
-def sub_distort_animation(filename: str) -> str:
+def sub_distort_animation(filename: str, context: CallbackContext, progress_msg) -> str:
     """distorts an image into a video or a video"""
     def remap(x, in_min, in_max, out_min, out_max):
         return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
@@ -81,9 +83,9 @@ def sub_distort_animation(filename: str) -> str:
 
     if filename.endswith('.mp4'):
         output = subprocess.check_output(FFMPEG_CMD_GET_INFO.format(source=filename), shell=True).decode('utf8').strip()
+        progress_msg.edit_text('0.1%…')
         try:
             parts = output.split(',')
-            logger.info('parts -> %s', parts)
             width = int(parts[0])
             height = int(parts[1])
             fps = parts[2]
@@ -96,12 +98,14 @@ def sub_distort_animation(filename: str) -> str:
             raise ValueError(f'Video is too long or too large ({score}; maximum is {MAX_SCORE}).')
 
         output = subprocess.check_output(FFMPEG_CMD_HAS_AUDIO.format(source=filename), shell=True)
+        progress_msg.edit_text('0.2%…')
         has_audio = len(output) > 1
 
         prefix = get_random_string(32)
 
         if subprocess.call(FFMPEG_CMD_EXTRACT.format(source=filename, prefix=prefix), shell=True) != 0:
             raise ValueError('Error extracting frames.')
+        progress_msg.edit_text('0.3%…')
 
         frames = sorted(glob(f'{prefix}*.{DISTORT_FORMAT}'))
     else:
@@ -112,15 +116,18 @@ def sub_distort_animation(filename: str) -> str:
 
     distorted = []
     for i, frame in enumerate(frames):
+        context.bot_data['edits'].append_edit(progress_msg, '%.1f%%…' % max(.4, (i / len(frames) * 100)))
         distorted.append(sub_distort(frame, distorted_name(frame, i),
                                      scale=remap(i, 0, len(frames) - 1, MIN_DISTORT, MAX_DISTORT)))
 
+    context.bot_data['edits'].append_edit(progress_msg, '99.' + '9' * random.randint(1, 9) + '%…')
     if has_audio:
         if subprocess.call(FFMPEG_CMD_COMPOSE_WITH_AUDIO.format(fps=fps, prefix=prefix, original=filename), shell=True) != 0:
             raise ValueError('Error generating video.')
     else:
         if subprocess.call(FFMPEG_CMD_COMPOSE.format(fps=fps, prefix=prefix), shell=True) != 0:
             raise ValueError('Error generating video.')
+    context.bot_data['edits'].flush_edits(progress_msg)
 
     if filename.endswith('.mp4'):
         for frame in frames:
@@ -196,11 +203,13 @@ def command_distort_animation(update: Update, context: CallbackContext, filename
     """distorts and sends a video"""
     context.bot_data['actions'].append(update.message.chat_id, ChatAction.UPLOAD_VIDEO)
 
+    progress_msg = update.message.reply_text('0.0%…', quote=False)
     try:
-        animation = sub_distort_animation(filename)
+        animation = sub_distort_animation(filename, context, progress_msg)
+        progress_msg.delete()
     except Exception as exc:
         logger.exception('Error distorting')
-        update.message.reply_text('Error distorting: ' + str(exc))
+        progress_msg.edit_text('Error distorting: ' + str(exc))
         return
     finally:
         context.bot_data['actions'].remove(update.message.chat_id, ChatAction.UPLOAD_VIDEO)
@@ -227,6 +236,7 @@ def command_distort_photo(update: Update, context: CallbackContext, filename: st
 
     params = remove_command(text or '').split(' ')
 
+    progress_msg = None
     try:
         if 'gif' in params:
             context.bot_data['actions'].append(update.message.chat_id, ChatAction.UPLOAD_VIDEO)
@@ -234,16 +244,22 @@ def command_distort_photo(update: Update, context: CallbackContext, filename: st
                 new_filename = filename.replace('.webp', '.jpg')
                 os.rename(filename, new_filename)
                 filename = new_filename
-            distorted_filename = sub_distort_animation(filename)
+            progress_msg = update.message.reply_text('0.0%…', quote=False)
+            distorted_filename = sub_distort_animation(filename, context, progress_msg)
         else:
             if filename.endswith('.webp'):
                 context.bot_data['actions'].append(update.message.chat_id, ChatAction.CHOOSE_STICKER)
             else:
                 context.bot_data['actions'].append(update.message.chat_id, ChatAction.UPLOAD_PHOTO)
             distorted_filename = sub_distort(filename, None, *parse_distort_params(params))
+        if progress_msg:
+            progress_msg.delete()
     except Exception as exc:
         logger.exception('Error distorting')
-        update.message.reply_text(f'Error distorting: {exc}')
+        if progress_msg:
+            progress_msg.edit_text(f'Error distorting: {exc}')
+        else:
+            update.message.reply_text(f'Error distorting: {exc}')
         # the original is kept for troubleshooting
         return
     finally:

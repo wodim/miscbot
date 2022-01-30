@@ -9,17 +9,17 @@ import threading
 from nltk.corpus import stopwords
 from nltk.stem import SnowballStemmer
 from telegram import Bot, Update
-from telegram.constants import PARSEMODE_HTML
+from telegram.constants import MAX_MESSAGE_LENGTH, PARSEMODE_HTML
 from telegram.ext import (CallbackContext, CommandHandler, DispatcherHandlerStop,
                           Filters, MessageHandler, TypeHandler, Updater)
 from telegram.utils.request import Request
 
 from _4chan import cron_4chan, command_thread
-from actions import Actions
 from calc import command_calc
 from chatbot import command_chatbot
 from distort import command_distort, command_distort_caption, command_invert
 from message_history import MessageHistory
+from queues import Actions, Edits
 from relay import (command_relay_chat_photo, command_relay_text, command_relay_photo,
                    cron_delete)
 from text import command_fortune, command_tip, command_oiga
@@ -54,7 +54,7 @@ def command_log(update: Update, context: CallbackContext) -> None:
 def command_normalize(update: Update, _: CallbackContext) -> None:
     """returns the text provided after the translate module has cleaned it up"""
     if text := get_command_args(update):
-        update.message.reply_text(ellipsis(clean_up(text), 4000))
+        update.message.reply_text(ellipsis(clean_up(text), MAX_MESSAGE_LENGTH))
     else:
         update.message.reply_text('Missing parameter or quote.')
 
@@ -73,7 +73,7 @@ def command_restart(update: Update, _: CallbackContext) -> None:
 def command_debug(update: Update, _: CallbackContext) -> None:
     """replies with some debug info"""
     if is_admin(update.message.from_user.id):
-        update.message.reply_text(actions.dump())
+        update.message.reply_text(ellipsis(f'{actions.dump()}\n{edits.dump()}', 4096))
     else:
         update.message.reply_animation(_config('error_animation'))
 
@@ -105,7 +105,7 @@ def command_info(update: Update, _: CallbackContext) -> None:
     if update.message.reply_to_message:
         update.message.reply_text(
             ('<code>%s</code>' %
-             ellipsis(html.escape(pprint.pformat(update.message.reply_to_message.to_dict())), 4000)),
+             ellipsis(html.escape(pprint.pformat(update.message.reply_to_message.to_dict())), MAX_MESSAGE_LENGTH)),
             parse_mode=PARSEMODE_HTML,
             disable_web_page_preview=True
         )
@@ -134,7 +134,7 @@ def callback_all(update: Update, _: CallbackContext) -> None:
         raise DispatcherHandlerStop()
 
 
-def command_trigger(update: Update, context: CallbackContext) -> None:
+def command_trigger(update: Update, _: CallbackContext) -> None:
     """replies to some text triggers and stops handling"""
     if not update.message or not update.message.text:
         return
@@ -146,7 +146,7 @@ def command_trigger(update: Update, context: CallbackContext) -> None:
             raise DispatcherHandlerStop()
 
 
-def command_haiku(update: Update, context: CallbackContext) -> None:
+def command_haiku(update: Update, _: CallbackContext) -> None:
     """detects haikus sent by group members and formats them"""
     if not update.message or not update.message.text:
         return
@@ -171,18 +171,20 @@ if __name__ == '__main__':
 
     message_history = MessageHistory()
     actions = Actions(bot, updater.dispatcher.job_queue)
+    edits = Edits(bot, updater.dispatcher.job_queue)
 
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
     dispatcher.bot_data.update({
         'message_history': message_history,
         'actions': actions,
+        'edits': edits,
         'me': bot.get_me(),
         'stemmer': SnowballStemmer(_config('chatbot_language')),
     })
-    dispatcher.bot_data['stopwords'] = list(set([
+    dispatcher.bot_data['stopwords'] = {
         dispatcher.bot_data['stemmer'].stem(x) for x in stopwords.words(_config('chatbot_language'))
-    ]))
+    }
 
     # very low group id so it runs even for banned users
     # can't run asynchronously or the log file can get corrupted
@@ -244,7 +246,8 @@ if __name__ == '__main__':
 
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
-    dispatcher.job_queue.run_repeating(actions.cron, interval=3)
+    dispatcher.job_queue.run_repeating(actions.cron, interval=4, name='actions').enabled = False
+    dispatcher.job_queue.run_repeating(edits.cron, interval=3, name='edits').enabled = False
 
     first_cron = datetime.datetime.now().astimezone()
     if first_cron.hour % 2 == 0:

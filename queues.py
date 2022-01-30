@@ -10,18 +10,21 @@ class Actions:
         self.pending_actions.append((chat_id, action))
         # send it immediately - don't wait for next cron
         self.bot.send_chat_action(chat_id=chat_id, action=action)
+        self.job_queue.get_jobs_by_name('actions')[0].enabled = True
 
     def remove(self, chat_id, action):
         try:
             self.pending_actions.remove((chat_id, action))
         except ValueError:
             pass
+        if len(self.pending_actions) == 0:
+            self.job_queue.get_jobs_by_name('actions')[0].enabled = False
 
         # sending a message clears the current action, so check if there are
         # more actions for this chat_id and send the latest one immediately
         # (the same thing cron does) -- a small delay is necessary, otherwise
         # this won't work, so we need the job queue
-        if chat_id in dict(self.pending_actions).keys():
+        if chat_id in dict(self.pending_actions):
             self.job_queue.run_once(
                 lambda context: self.bot.send_chat_action(chat_id=context.job.context[0],
                                                           action=context.job.context[1]),
@@ -43,3 +46,45 @@ class Actions:
         if self.pending_actions:
             return f'pending actions: {self.pending_actions}'
         return 'no pending actions'
+
+
+class Edits:
+    """this class handles pending edits and sends them in a staggered way"""
+    def __init__(self, bot, job_queue):
+        self.pending_edits = []
+        self.last_edit = {}
+        self.bot = bot
+        self.job_queue = job_queue
+
+    def append_edit(self, message, text):
+        self.pending_edits.append((message, text))
+        self.job_queue.get_jobs_by_name('edits')[0].enabled = True
+
+    def flush(self):
+        self.pending_edits = []
+        self.last_edit = {}
+
+    def flush_edits(self, message):
+        self.pending_edits = list(filter(lambda x: x[0] != message, self.pending_edits))
+        if message in self.last_edit:
+            del self.last_edit[message]
+        if len(self.pending_edits) == 0:
+            self.job_queue.get_jobs_by_name('edits')[0].enabled = False
+
+    def cron(self, _):
+        """checks which messages have pending edits and sends them"""
+        # turn it into a dict so there is only one value per key
+        for message, text in dict(self.pending_edits).items():
+            try:
+                if message in self.last_edit and self.last_edit[message] != text:
+                    message.edit_text(text)
+                self.last_edit[message] = text
+            except:
+                # can fail for many reasons such as ratelimits,
+                # the message no longer existing...
+                pass
+
+    def dump(self) -> str:
+        if self.pending_edits:
+            return f'pending edits: {[x[1] for x in self.pending_edits]}'
+        return 'no pending edits'

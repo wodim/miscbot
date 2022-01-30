@@ -8,7 +8,9 @@ import unicodedata
 import emoji
 
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(message)s', level=logging.INFO)
+logging.getLogger('apscheduler').setLevel(logging.WARNING)
+format_ = '[{filename:>16}:{lineno:<4} {funcName:>16}()] {message}'
+logging.basicConfig(format=format_, style='{', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -37,7 +39,7 @@ def remove_command(message: str) -> str:
 def get_user_fullname(update) -> str:
     """get this user's first + last name"""
     if update.message.from_user.last_name:
-        return (f'{update.message.from_user.first_name}'
+        return (f'{update.message.from_user.first_name} '
                 f'{update.message.from_user.last_name}')
     return update.message.from_user.first_name
 
