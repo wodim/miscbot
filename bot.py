@@ -17,7 +17,7 @@ from telegram.utils.request import Request
 from _4chan import cron_4chan, command_thread
 from calc import command_calc
 from chatbot import command_chatbot
-from distort import command_distort, command_distort_caption, command_invert
+from distort import command_distort, command_distort_caption, command_invert, command_voice
 from message_history import MessageHistory
 from queues import Actions, Edits
 from relay import (command_relay_chat_photo, command_relay_text, command_relay_photo,
@@ -225,6 +225,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('scramble', command_scramble, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('distort', command_distort, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('voice', command_voice, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('invert', command_invert, run_async=True), group=40)
     # CommandHandlers don't work on captions, so all photos with a caption are sent to a
     # fun that will check for the command and then run command_distort if necessary
@@ -234,7 +235,8 @@ if __name__ == '__main__':
     # responses in private
     dispatcher.add_handler(MessageHandler((Filters.text | Filters.poll) & ~Filters.command & Filters.chat_type.private,
                                           command_scramble, run_async=True), group=40)
-    dispatcher.add_handler(MessageHandler((Filters.photo | Filters.animation | Filters.video | Filters.sticker) & ~Filters.command & Filters.chat_type.private,
+    dispatcher.add_handler(MessageHandler((Filters.photo | Filters.animation | Filters.video | Filters.sticker | Filters.voice | Filters.audio) &
+                                           ~Filters.command & Filters.chat_type.private,
                                           command_distort, run_async=True), group=40)
     dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_unhandled, run_async=True), group=40)
 

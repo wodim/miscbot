@@ -1,4 +1,6 @@
 from glob import glob
+import gzip
+import json
 import os
 import random
 import re
@@ -66,8 +68,8 @@ def sub_invert(source: str, output: str = '') -> str:
 FFMPEG_CMD_GET_INFO = "ffprobe -v error -select_streams v:0 -count_packets -show_entries stream=nb_read_packets,avg_frame_rate,width,height -of csv=p=0 '{source}'"
 FFMPEG_CMD_HAS_AUDIO = "ffprobe -v error -select_streams a:0 -show_entries stream=index -of csv=p=0 '{source}'"
 FFMPEG_CMD_EXTRACT = "ffmpeg -hide_banner -i '{source}' -vsync vfr -map 0:v:0 -q:v 2 '{prefix}-%06d." + DISTORT_FORMAT + "'"
-FFMPEG_CMD_COMPOSE = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
-FFMPEG_CMD_COMPOSE_WITH_AUDIO = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -i '{original}' -map 0:v -map 1:a -af 'vibrato=d=1,vibrato=d=1' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
+FFMPEG_CMD_COMPOSE = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -map_metadata -1 -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
+FFMPEG_CMD_COMPOSE_WITH_AUDIO = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -i '{original}' -map_metadata -1 -map 0:v -map 1:a -af 'vibrato=d=1,vibrato=d=1' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
 MIN_DISTORT = 0
 MAX_DISTORT = 80
 PHOTO_TO_GIF_FRAMES = 100
@@ -138,6 +140,84 @@ def sub_distort_animation(filename: str, context: CallbackContext, progress_msg)
     return prefix + '.mp4'
 
 
+FFMPEG_CMD_AUDIO = "ffmpeg -i '{original}' -map_metadata -1 -af 'vibrato=d=1,vibrato=d=1' -vbr on -ac 1 -c:a libopus '{prefix}.ogg'"
+def sub_distort_audio(filename: str) -> str:
+    prefix = 'distort_' + filename[:-4]
+    if subprocess.call(FFMPEG_CMD_AUDIO.format(original=filename, prefix=prefix), shell=True) != 0:
+        raise ValueError('Error generating audio.')
+    return prefix + '.ogg'
+
+
+FFMPEG_CMD_VOICE = "ffmpeg -i '{original}' -map_metadata -1 -vbr on -ac 1 -c:a libopus '{prefix}.ogg'"
+def sub_to_voice(filename: str) -> str:
+    prefix = 'voice_' + filename[:-4]
+    if subprocess.call(FFMPEG_CMD_VOICE.format(original=filename, prefix=prefix), shell=True) != 0:
+        raise ValueError('Error generating audio.')
+    return prefix + '.ogg'
+
+
+def sub_distort_animated_sticker(filename: str, scale: int) -> str:
+    def dict_distort(input_):
+        def distort(n):
+            return round(n + n * random.uniform(-scale, scale), 1)
+        if isinstance(input_, dict):
+            return {x: distort(y) if isinstance(y, float) else dict_distort(y) for x, y in input_.items()}
+        elif isinstance(input_, list):
+            return [distort(x) if isinstance(x, float) else dict_distort(x) for x in input_]
+        elif isinstance(input_, float):
+            return distort(input_)
+        return input_
+
+    try:
+        data = gzip.decompress(open(filename, 'rb').read())
+        data = json.loads(data)
+    except:
+        logger.exception('Failed to parse the sticker')
+        raise ValueError('Invalid sticker.')
+    try:
+        data = dict_distort(data)
+    except:
+        logger.exception('Failed to distort the sticker')
+        raise ValueError("Couldn't distort the sticker.")
+    try:
+        data = json.dumps(dict_distort(data))
+        with open('distort_' + filename, 'wb') as fp:
+            fp.write(gzip.compress(data.encode()))
+    except:
+        logger.exception('Failed to pack the sticker')
+        raise ValueError("Couldn't pack the sticker.")
+
+    return 'distort_' + filename
+
+
+def command_voice(update: Update, context: CallbackContext) -> None:
+    """handles the /voice command"""
+    if update.message.reply_to_message and update.message.reply_to_message.audio:
+        filename = context.bot.get_file(update.message.reply_to_message.audio.file_id).\
+            download(custom_path=get_random_string(12) + '.ogg')
+    elif update.message.reply_to_message and update.message.reply_to_message.voice:
+        filename = context.bot.get_file(update.message.reply_to_message.voice.file_id).\
+            download(custom_path=get_random_string(12) + '.ogg')
+    else:
+        update.message.reply_text('Quote an audio file to have it converted into a voice message.')
+        return
+
+    context.bot_data['actions'].append(update.message.chat_id, ChatAction.RECORD_VOICE)
+    try:
+        voice = sub_to_voice(filename)
+    except Exception as exc:
+        logger.exception('Error converting')
+        update.message.reply_text('Error converting: ' + str(exc))
+        return
+    finally:
+        context.bot_data['actions'].remove(update.message.chat_id, ChatAction.RECORD_VOICE)
+
+    update.message.reply_voice(voice=open(voice, 'rb'), quote=False)
+
+    os.remove(filename)
+    os.remove(voice)
+
+
 def command_distort(update: Update, context: CallbackContext) -> None:
     """handles the /distort command"""
     text = None
@@ -169,14 +249,39 @@ def command_distort(update: Update, context: CallbackContext) -> None:
         filename = context.bot.get_file(update.message.reply_to_message.sticker.file_id).\
             download(custom_path=get_random_string(12) + '.webp')
         text = update.message.text
+    elif update.message.sticker and update.message.sticker.is_animated:
+        filename = context.bot.get_file(update.message.sticker.file_id).\
+            download(custom_path=get_random_string(12) + '.tgs')
+        text = None
+    elif (update.message.reply_to_message and update.message.reply_to_message.sticker and
+              update.message.reply_to_message.sticker.is_animated):
+        filename = context.bot.get_file(update.message.reply_to_message.sticker.file_id).\
+            download(custom_path=get_random_string(12) + '.tgs')
+        text = update.message.text
+    elif update.message.voice:
+        filename = context.bot.get_file(update.message.voice.file_id).\
+            download(custom_path=get_random_string(12) + '.ogg')
+    elif update.message.reply_to_message and update.message.reply_to_message.voice:
+        filename = context.bot.get_file(update.message.reply_to_message.voice.file_id).\
+            download(custom_path=get_random_string(12) + '.ogg')
+    elif update.message.audio:
+        filename = context.bot.get_file(update.message.audio.file_id).\
+            download(custom_path=get_random_string(12) + '.ogg')
+    elif update.message.reply_to_message and update.message.reply_to_message.audio:
+        filename = context.bot.get_file(update.message.reply_to_message.audio.file_id).\
+            download(custom_path=get_random_string(12) + '.ogg')
     else:
         update.message.reply_text('Nothing to distort. Upload or quote a photo or GIF or non-animated sticker.')
         return
 
     if filename.endswith('.jpg') or filename.endswith('.webp'):
         command_distort_photo(update, context, filename, text)
-    else:
+    elif filename.endswith('.ogg'):
+        command_distort_audio(update, context, filename)
+    elif filename.endswith('.mp4'):
         command_distort_animation(update, context, filename)
+    elif filename.endswith('.tgs'):
+        command_distort_animated_sticker(update, context, filename, text)
 
 
 def command_invert(update: Update, context: CallbackContext) -> None:
@@ -197,6 +302,56 @@ def command_invert(update: Update, context: CallbackContext) -> None:
 
     os.remove(filename)
     os.remove(inverted_filename)
+
+
+def command_distort_animated_sticker(update: Update, context: CallbackContext, filename: str, text: str) -> None:
+    """distorts and sends an animated sticker"""
+    def parse_distort_params(params):
+        scale = .1
+        for param in params:
+            try:
+                scale = int(param)
+                if scale < 1 or scale > 100:
+                    raise ValueError()
+                return scale / 100
+            except:
+                pass
+        return scale
+
+    params = remove_command(text or '').split(' ')
+
+    context.bot_data['actions'].append(update.message.chat_id, ChatAction.CHOOSE_STICKER)
+    try:
+        sticker = sub_distort_animated_sticker(filename, scale=parse_distort_params(params))
+    except Exception as exc:
+        logger.exception('Error distorting')
+        update.message.reply_text('Error distorting: ' + str(exc))
+        return
+    finally:
+        context.bot_data['actions'].remove(update.message.chat_id, ChatAction.CHOOSE_STICKER)
+
+    update.message.reply_sticker(open(sticker, 'rb'))
+
+    os.remove(filename)
+    os.remove(sticker)
+
+
+def command_distort_audio(update: Update, context: CallbackContext, filename: str) -> None:
+    """distorts and sends an audio"""
+    context.bot_data['actions'].append(update.message.chat_id, ChatAction.RECORD_VOICE)
+    try:
+        voice = sub_distort_audio(filename)
+    except Exception as exc:
+        logger.exception('Error distorting')
+        update.message.reply_text('Error distorting: ' + str(exc))
+        return
+    finally:
+        context.bot_data['actions'].remove(update.message.chat_id, ChatAction.RECORD_VOICE)
+
+    update.message.reply_voice(voice=open(voice, 'rb'))
+
+    os.remove(filename)
+    os.remove(voice)
 
 
 def command_distort_animation(update: Update, context: CallbackContext, filename: str) -> None:
