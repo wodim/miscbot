@@ -218,60 +218,36 @@ def command_voice(update: Update, context: CallbackContext) -> None:
     os.remove(voice)
 
 
+FILE_TYPES = [
+    ('photo', 'jpg'),
+    ('animation', 'mp4'),
+    ('video', 'mp4'),
+    ('sticker', ('is_animated', 'tgs', 'webp')),
+    ('voice', 'ogg'),
+    ('audio', 'ogg'),
+]
 def command_distort(update: Update, context: CallbackContext) -> None:
     """handles the /distort command"""
-    text = None
-    if update.message.photo:
-        filename = context.bot.get_file(update.message.photo[-1]).\
-            download(custom_path=get_random_string(12) + '.jpg')
-        text = update.message.caption
-    elif update.message.reply_to_message and len(update.message.reply_to_message.photo):
-        filename = context.bot.get_file(update.message.reply_to_message.photo[-1]).\
-            download(custom_path=get_random_string(12) + '.jpg')
-        text = update.message.text
-    elif update.message.animation:
-        filename = context.bot.get_file(update.message.animation.file_id).\
-            download(custom_path=get_random_string(12) + '.mp4')
-    elif update.message.reply_to_message and update.message.reply_to_message.animation:
-        filename = context.bot.get_file(update.message.reply_to_message.animation.file_id).\
-            download(custom_path=get_random_string(12) + '.mp4')
-    elif update.message.video:
-        filename = context.bot.get_file(update.message.video.file_id).\
-            download(custom_path=get_random_string(12) + '.mp4')
-    elif update.message.reply_to_message and update.message.reply_to_message.video:
-        filename = context.bot.get_file(update.message.reply_to_message.video.file_id).\
-            download(custom_path=get_random_string(12) + '.mp4')
-    elif update.message.sticker and not update.message.sticker.is_animated:
-        filename = context.bot.get_file(update.message.sticker.file_id).\
-            download(custom_path=get_random_string(12) + '.webp')
-    elif (update.message.reply_to_message and update.message.reply_to_message.sticker and
-              not update.message.reply_to_message.sticker.is_animated):
-        filename = context.bot.get_file(update.message.reply_to_message.sticker.file_id).\
-            download(custom_path=get_random_string(12) + '.webp')
-        text = update.message.text
-    elif update.message.sticker and update.message.sticker.is_animated:
-        filename = context.bot.get_file(update.message.sticker.file_id).\
-            download(custom_path=get_random_string(12) + '.tgs')
-        text = None
-    elif (update.message.reply_to_message and update.message.reply_to_message.sticker and
-              update.message.reply_to_message.sticker.is_animated):
-        filename = context.bot.get_file(update.message.reply_to_message.sticker.file_id).\
-            download(custom_path=get_random_string(12) + '.tgs')
-        text = update.message.text
-    elif update.message.voice:
-        filename = context.bot.get_file(update.message.voice.file_id).\
-            download(custom_path=get_random_string(12) + '.ogg')
-    elif update.message.reply_to_message and update.message.reply_to_message.voice:
-        filename = context.bot.get_file(update.message.reply_to_message.voice.file_id).\
-            download(custom_path=get_random_string(12) + '.ogg')
-    elif update.message.audio:
-        filename = context.bot.get_file(update.message.audio.file_id).\
-            download(custom_path=get_random_string(12) + '.ogg')
-    elif update.message.reply_to_message and update.message.reply_to_message.audio:
-        filename = context.bot.get_file(update.message.reply_to_message.audio.file_id).\
-            download(custom_path=get_random_string(12) + '.ogg')
-    else:
-        update.message.reply_text('Nothing to distort. Upload or quote a photo or GIF or non-animated sticker.')
+    message = update.message.reply_to_message or update.message
+    text, filename = None, None
+    for type_, extension in FILE_TYPES:
+        if getattr(message, type_):
+            obj = getattr(message, type_)
+        else:
+            continue
+        try:
+            # the photo object has different sizes so we have to choose the
+            # last one (the biggest one)
+            obj = obj[-1]
+        except TypeError:
+            pass
+        if isinstance(extension, tuple):
+            attr, ext1, ext2 = extension
+            extension = ext1 if getattr(obj, attr) else ext2
+        filename = context.bot.get_file(obj).download(custom_path=f'{get_random_string(12)}.{extension}')
+        text = update.message.caption or update.message.text
+    if not filename:
+        update.message.reply_text('Nothing to distort. Upload or quote a photo, video, GIF, or sticker.')
         return
 
     if filename.endswith('.jpg') or filename.endswith('.webp'):
