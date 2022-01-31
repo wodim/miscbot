@@ -1,3 +1,6 @@
+from telegram.error import BadRequest
+
+
 class Actions:
     """this class handles all chat actions: stores thems and sends them
     periodically using a cron method"""
@@ -63,6 +66,7 @@ class Edits:
     def flush(self):
         self.pending_edits = []
         self.last_edit = {}
+        self.job_queue.get_jobs_by_name('edits')[0].enabled = False
 
     def flush_edits(self, message):
         self.pending_edits = list(filter(lambda x: x[0] != message, self.pending_edits))
@@ -70,6 +74,18 @@ class Edits:
             del self.last_edit[message]
         if len(self.pending_edits) == 0:
             self.job_queue.get_jobs_by_name('edits')[0].enabled = False
+
+    def delete_msg(self, message):
+        while True:
+            try:
+                self.flush_edits(message)
+                message.delete()
+                return
+            except BadRequest:
+                # this message was deleted already
+                return
+            except:
+                pass
 
     def cron(self, _):
         """checks which messages have pending edits and sends them"""
@@ -79,12 +95,15 @@ class Edits:
                 if message in self.last_edit and self.last_edit[message] != text:
                     message.edit_text(text)
                 self.last_edit[message] = text
+            except BadRequest:
+                # this message was deleted
+                self.flush_edits(message)
             except:
-                # can fail for many reasons such as ratelimits,
-                # the message no longer existing...
+                # generally fails because of ratelimits
                 pass
 
     def dump(self) -> str:
         if self.pending_edits:
-            return f'pending edits: {[x[1] for x in self.pending_edits]}'
+            edits = {f'{x[0].message_id}@{x[0].chat_id}': x[1] for x in self.pending_edits}
+            return f'pending edits: {edits}'
         return 'no pending edits'

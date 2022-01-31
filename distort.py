@@ -5,9 +5,9 @@ import re
 from shutil import copy2
 import subprocess
 import threading
-from time import time
 
 from telegram import ChatAction, Update
+from telegram.error import BadRequest
 from telegram.ext import CallbackContext
 from wand.image import Image
 
@@ -83,7 +83,7 @@ def sub_distort_animation(filename: str, context: CallbackContext, progress_msg)
 
     if filename.endswith('.mp4'):
         output = subprocess.check_output(FFMPEG_CMD_GET_INFO.format(source=filename), shell=True).decode('utf8').strip()
-        progress_msg.edit_text('0.1%…')
+        context.bot_data['edits'].append_edit(progress_msg, '0.1%…')
         try:
             parts = output.split(',')
             width = int(parts[0])
@@ -98,14 +98,14 @@ def sub_distort_animation(filename: str, context: CallbackContext, progress_msg)
             raise ValueError(f'Video is too long or too large ({score}; maximum is {MAX_SCORE}).')
 
         output = subprocess.check_output(FFMPEG_CMD_HAS_AUDIO.format(source=filename), shell=True)
-        progress_msg.edit_text('0.2%…')
+        context.bot_data['edits'].append_edit(progress_msg, '0.2%…')
         has_audio = len(output) > 1
 
         prefix = get_random_string(32)
 
         if subprocess.call(FFMPEG_CMD_EXTRACT.format(source=filename, prefix=prefix), shell=True) != 0:
             raise ValueError('Error extracting frames.')
-        progress_msg.edit_text('0.3%…')
+        context.bot_data['edits'].append_edit(progress_msg, '0.3%…')
 
         frames = sorted(glob(f'{prefix}*.{DISTORT_FORMAT}'))
     else:
@@ -201,15 +201,16 @@ def command_invert(update: Update, context: CallbackContext) -> None:
 
 def command_distort_animation(update: Update, context: CallbackContext, filename: str) -> None:
     """distorts and sends a video"""
-    context.bot_data['actions'].append(update.message.chat_id, ChatAction.UPLOAD_VIDEO)
-
     progress_msg = update.message.reply_text('0.0%…', quote=False)
+
+    context.bot_data['actions'].append(update.message.chat_id, ChatAction.UPLOAD_VIDEO)
     try:
         animation = sub_distort_animation(filename, context, progress_msg)
-        progress_msg.delete()
+        context.bot_data['edits'].delete_msg(progress_msg)
     except Exception as exc:
         logger.exception('Error distorting')
-        progress_msg.edit_text('Error distorting: ' + str(exc))
+        context.bot_data['edits'].append_edit(progress_msg, 'Error distorting: ' + str(exc))
+        context.bot_data['edits'].flush_edits(progress_msg)
         return
     finally:
         context.bot_data['actions'].remove(update.message.chat_id, ChatAction.UPLOAD_VIDEO)
@@ -239,25 +240,27 @@ def command_distort_photo(update: Update, context: CallbackContext, filename: st
     progress_msg = None
     try:
         if 'gif' in params:
+            progress_msg = update.message.reply_text('0.0%…', quote=False)
             context.bot_data['actions'].append(update.message.chat_id, ChatAction.UPLOAD_VIDEO)
             if filename.endswith('.webp'):
                 new_filename = filename.replace('.webp', '.jpg')
                 os.rename(filename, new_filename)
                 filename = new_filename
-            progress_msg = update.message.reply_text('0.0%…', quote=False)
             distorted_filename = sub_distort_animation(filename, context, progress_msg)
+            context.bot_data['edits'].delete_msg(progress_msg)
         else:
             if filename.endswith('.webp'):
                 context.bot_data['actions'].append(update.message.chat_id, ChatAction.CHOOSE_STICKER)
             else:
                 context.bot_data['actions'].append(update.message.chat_id, ChatAction.UPLOAD_PHOTO)
             distorted_filename = sub_distort(filename, None, *parse_distort_params(params))
-        if progress_msg:
-            progress_msg.delete()
+    except BadRequest:
+        pass
     except Exception as exc:
         logger.exception('Error distorting')
         if progress_msg:
-            progress_msg.edit_text(f'Error distorting: {exc}')
+            context.bot_data['edits'].append_edit(progress_msg, 'Error distorting: ' + str(exc))
+            context.bot_data['edits'].flush_edits(progress_msg)
         else:
             update.message.reply_text(f'Error distorting: {exc}')
         # the original is kept for troubleshooting

@@ -73,7 +73,7 @@ def command_restart(update: Update, _: CallbackContext) -> None:
 def command_debug(update: Update, _: CallbackContext) -> None:
     """replies with some debug info"""
     if is_admin(update.message.from_user.id):
-        update.message.reply_text(ellipsis(f'{actions.dump()}\n{edits.dump()}', 4096))
+        update.message.reply_text(ellipsis(f'{actions.dump()}\n{edits.dump()}', MAX_MESSAGE_LENGTH))
     else:
         update.message.reply_animation(_config('error_animation'))
 

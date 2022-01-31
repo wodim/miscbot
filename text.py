@@ -1,6 +1,7 @@
 import random
 
 from telegram import Update
+from telegram.constants import MAX_MESSAGE_LENGTH
 from telegram.ext import CallbackContext
 
 from utils import get_random_line, ellipsis
@@ -40,7 +41,7 @@ def command_fortune(update: Update, context: CallbackContext) -> None:
     """handles the /fortune command, which prints a random fortune or a list of
     a max of MAX_FORTUNE_RESULTS that match the parameter"""
     def msg(text):
-        update.message.reply_text(ellipsis(text, 4000),
+        update.message.reply_text(ellipsis(text, MAX_MESSAGE_LENGTH),
                                   disable_web_page_preview=True, quote=False)
     if context.args:
         if fortunes := list(search_fortunes(' '.join(context.args))):

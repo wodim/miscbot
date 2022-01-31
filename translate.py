@@ -4,7 +4,7 @@ import re
 import subprocess
 
 from telegram import ChatAction, Update
-from telegram.constants import PARSEMODE_HTML
+from telegram.constants import MAX_MESSAGE_LENGTH, PARSEMODE_HTML
 from telegram.ext import CallbackContext
 
 
@@ -87,7 +87,7 @@ def command_translate(update: Update, context: CallbackContext) -> None:
     finally:
         context.bot_data['actions'].remove(update.message.chat_id, ChatAction.TYPING)
 
-    update.message.reply_text(ellipsis(translation, 4000), disable_web_page_preview=True)
+    update.message.reply_text(ellipsis(translation, MAX_MESSAGE_LENGTH), disable_web_page_preview=True)
 
 
 def get_scramble_languages() -> list[str]:
@@ -118,4 +118,4 @@ def command_scramble(update: Update, context: CallbackContext) -> None:
     finally:
         context.bot_data['actions'].remove(update.message.chat_id, ChatAction.TYPING)
 
-    update.message.reply_text(ellipsis(scrambled, 4000), disable_web_page_preview=True)
+    update.message.reply_text(ellipsis(scrambled, MAX_MESSAGE_LENGTH), disable_web_page_preview=True)

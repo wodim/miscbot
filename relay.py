@@ -2,7 +2,7 @@ import html
 import os
 
 from telegram import Update
-from telegram.constants import PARSEMODE_HTML
+from telegram.constants import MAX_CAPTION_LENGTH, MAX_MESSAGE_LENGTH, PARSEMODE_HTML
 from telegram.ext import CallbackContext
 
 from distort import sub_distort, sub_invert
@@ -92,16 +92,16 @@ def send_relayed_message(update: Update, context: CallbackContext,
                                 for text, language in trace])
         trace_message = context.bot.send_message(
             trace_channel,
-            '<b>%s</b>\n%s' % (html.escape(get_user_fullname(update)), ellipsis(trace_text, 3900)),
+            '<b>%s</b>\n%s' % (html.escape(get_user_fullname(update)), ellipsis(trace_text, MAX_MESSAGE_LENGTH - 100)),
             parse_mode=PARSEMODE_HTML, disable_web_page_preview=True
         )
         message_text = ('<b>%s</b> <a href="%s">[source]</a> <a href="%s">[trace]</a>\n%s' %
                         (html.escape(get_user_fullname(update)), update.message.link, trace_message.link,
-                         html.escape(ellipsis(text or '', 900 if photo_fp else 3900))))
+                         html.escape(ellipsis(text or '', MAX_CAPTION_LENGTH - 100 if photo_fp else MAX_MESSAGE_LENGTH - 100))))
     else:
         message_text = ('<b>%s</b> <a href="%s">[source]</a>\n%s' %
                         (html.escape(get_user_fullname(update)), update.message.link,
-                         html.escape(ellipsis(text or '', 900 if photo_fp else 3900))))
+                         html.escape(ellipsis(text or '', MAX_CAPTION_LENGTH - 100 if photo_fp else MAX_MESSAGE_LENGTH - 100))))
 
     if photo_fp:
         message = context.bot.send_photo(
