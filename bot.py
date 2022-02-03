@@ -1,4 +1,5 @@
 import datetime
+from glob import glob
 import html
 import os
 import pickle
@@ -26,6 +27,7 @@ from text import command_fortune, command_tip, command_oiga
 from translate import command_scramble, command_translate
 from utils import (_config, capitalize, clean_up, ellipsis, get_command_args, get_relays,
                    is_admin, remove_punctuation, send_admin_message)
+from vox import command_vox
 
 
 log_semaphore = threading.Semaphore()
@@ -162,6 +164,44 @@ def command_haiku(update: Update, _: CallbackContext) -> None:
     update.message.reply_text(text, quote=False)
 
 
+def command_send(update: Update, context: CallbackContext) -> None:
+    """returns a media object by id"""
+    if len(context.args) != 2:
+        update.message.reply_text('Usage: /send <photo animation video audio voice sticker contact...> <id>')
+        return
+    try:
+        fun = getattr(update.message, f'reply_{context.args[0]}')
+    except AttributeError:
+        update.message.reply_text('Invalid kind of media object.')
+        return
+    try:
+        fun(context.args[1])
+    except Exception as exc:
+        update.message.reply_text(f'Error: {exc}')
+
+
+def command_clear(update: Update, _: CallbackContext) -> None:
+    """clears all temporary files"""
+    if files := (glob('*.jpg') + glob('*.webm') + glob('*.tgs') + glob('*.webp') +
+                 glob('translate_tmp_*.txt') + glob('*.mp4')):
+        for file in files:
+            os.remove(file)
+        all_files = ' '.join(files)
+        update.message.reply_text(ellipsis(f'Removed {len(files)} file(s): {all_files}', MAX_MESSAGE_LENGTH))
+    else:
+        update.message.reply_text('There were no temporary files to remove.')
+
+
+def command_help(update: Update, _: CallbackContext) -> None:
+    commands = []
+    for _, handlers in dispatcher.handlers.items():
+        for handler in handlers:
+            if isinstance(handler, CommandHandler):
+                for command in handler.command:
+                    commands.append(f'/{command}')
+    update.message.reply_text(' '.join(commands))
+
+
 if __name__ == '__main__':
     # connection pool size is workers + updater + dispatcher + job queue + main thread
     NUM_THREADS = 16
@@ -207,7 +247,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(MessageHandler(Filters.text, command_trigger), group=30)
 
     # commands
-    dispatcher.add_handler(CommandHandler('help', command_fortune), group=40)
+    dispatcher.add_handler(CommandHandler('help', command_help), group=40)
     dispatcher.add_handler(CommandHandler('start', command_fortune), group=40)
     dispatcher.add_handler(CommandHandler('fortune', command_fortune), group=40)
     dispatcher.add_handler(CommandHandler('tip', command_tip), group=40)
@@ -221,12 +261,15 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('flush', command_flush), group=40)
     dispatcher.add_handler(CommandHandler('info', command_info), group=40)
     dispatcher.add_handler(CommandHandler('text', command_text), group=40)
+    dispatcher.add_handler(CommandHandler('send', command_send), group=40)
     dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('clear', command_clear, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('scramble', command_scramble, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('distort', command_distort, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('voice', command_voice, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('invert', command_invert, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler(['vox', 'fvox', 'hgrunt'], command_vox, run_async=True), group=40)
     # CommandHandlers don't work on captions, so all photos with a caption are sent to a
     # fun that will check for the command and then run command_distort if necessary
     dispatcher.add_handler(MessageHandler(Filters.caption & Filters.chat_type.group,

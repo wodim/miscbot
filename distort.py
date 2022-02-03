@@ -69,7 +69,7 @@ FFMPEG_CMD_GET_INFO = "ffprobe -v error -select_streams v:0 -count_packets -show
 FFMPEG_CMD_HAS_AUDIO = "ffprobe -v error -select_streams a:0 -show_entries stream=index -of csv=p=0 '{source}'"
 FFMPEG_CMD_EXTRACT = "ffmpeg -hide_banner -i '{source}' -vsync vfr -map 0:v:0 -q:v 2 '{prefix}-%06d." + DISTORT_FORMAT + "'"
 FFMPEG_CMD_COMPOSE = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -map_metadata -1 -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
-FFMPEG_CMD_COMPOSE_WITH_AUDIO = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -i '{original}' -map_metadata -1 -map 0:v -map 1:a -af 'vibrato=d=1,vibrato=d=1' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
+FFMPEG_CMD_COMPOSE_WITH_AUDIO = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -i '{original}' -map_metadata -1 -map 0:v -map 1:a -af 'vibrato=d=1,vibrato=d=.5' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
 MIN_DISTORT = 0
 MAX_DISTORT = 80
 PHOTO_TO_GIF_FRAMES = 100
@@ -140,7 +140,7 @@ def sub_distort_animation(filename: str, context: CallbackContext, progress_msg)
     return prefix + '.mp4'
 
 
-FFMPEG_CMD_AUDIO = "ffmpeg -i '{original}' -map_metadata -1 -af 'vibrato=d=1,vibrato=d=1' -vbr on -ac 1 -c:a libopus '{prefix}.ogg'"
+FFMPEG_CMD_AUDIO = "ffmpeg -i '{original}' -map_metadata -1 -af 'vibrato=d=1,vibrato=d=.5' -vbr on -c:a libopus '{prefix}.ogg'"
 def sub_distort_audio(filename: str) -> str:
     prefix = 'distort_' + filename[:-4]
     if subprocess.call(FFMPEG_CMD_AUDIO.format(original=filename, prefix=prefix), shell=True) != 0:
@@ -148,7 +148,7 @@ def sub_distort_audio(filename: str) -> str:
     return prefix + '.ogg'
 
 
-FFMPEG_CMD_VOICE = "ffmpeg -i '{original}' -map_metadata -1 -vbr on -ac 1 -c:a libopus '{prefix}.ogg'"
+FFMPEG_CMD_VOICE = "ffmpeg -i '{original}' -map_metadata -1 -vbr on -c:a libopus '{prefix}.ogg'"
 def sub_to_voice(filename: str) -> str:
     prefix = 'voice_' + filename[:-4]
     if subprocess.call(FFMPEG_CMD_VOICE.format(original=filename, prefix=prefix), shell=True) != 0:
@@ -156,13 +156,19 @@ def sub_to_voice(filename: str) -> str:
     return prefix + '.ogg'
 
 
+STICKER_SIZE = 512
 def sub_distort_animated_sticker(filename: str, scale: int) -> str:
     def dict_distort(input_):
         def distort(n):
-            return round(n + n * random.uniform(-scale, scale), 1)
+            def clamp(n, floor, ceil):
+                return max(floor, min(n, ceil))
+            return clamp(round(n + n * random.uniform(-scale, scale), 1), -512, 512)
         if isinstance(input_, dict):
             return {x: distort(y) if isinstance(y, float) else dict_distort(y) for x, y in input_.items()}
         elif isinstance(input_, list):
+            if len(input_) == 4 and all([isinstance(x, (float, int)) for x in input_]):
+                # lists of 4 elements are colours. don't modify them
+                return [round(x, 2) if isinstance(x, float) else x for x in input_]
             return [distort(x) if isinstance(x, float) else dict_distort(x) for x in input_]
         elif isinstance(input_, float):
             return distort(input_)
@@ -175,12 +181,12 @@ def sub_distort_animated_sticker(filename: str, scale: int) -> str:
         logger.exception('Failed to parse the sticker')
         raise ValueError('Invalid sticker.')
     try:
-        data = dict_distort(data)
+        data['layers'] = dict_distort(data['layers'])
     except:
         logger.exception('Failed to distort the sticker')
         raise ValueError("Couldn't distort the sticker.")
     try:
-        data = json.dumps(dict_distort(data))
+        data = json.dumps(dict_distort(data), ensure_ascii=False, separators=(',', ':'))
         with open('distort_' + filename, 'wb') as fp:
             fp.write(gzip.compress(data.encode()))
     except:
@@ -340,8 +346,8 @@ def command_distort_animation(update: Update, context: CallbackContext, filename
         context.bot_data['edits'].delete_msg(progress_msg)
     except Exception as exc:
         logger.exception('Error distorting')
-        context.bot_data['edits'].append_edit(progress_msg, 'Error distorting: ' + str(exc))
         context.bot_data['edits'].flush_edits(progress_msg)
+        progress_msg.edit_text('Error distorting: ' + str(exc))
         return
     finally:
         context.bot_data['actions'].remove(update.message.chat_id, ChatAction.UPLOAD_VIDEO)
@@ -390,8 +396,8 @@ def command_distort_photo(update: Update, context: CallbackContext, filename: st
     except Exception as exc:
         logger.exception('Error distorting')
         if progress_msg:
-            context.bot_data['edits'].append_edit(progress_msg, 'Error distorting: ' + str(exc))
             context.bot_data['edits'].flush_edits(progress_msg)
+            progress_msg.edit_text('Error distorting: ' + str(exc))
         else:
             update.message.reply_text(f'Error distorting: {exc}')
         # the original is kept for troubleshooting

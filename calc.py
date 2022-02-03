@@ -1,7 +1,7 @@
 import re
 import subprocess
 
-from telegram import Update
+from telegram import ChatAction, Update
 from telegram.ext import CallbackContext
 
 from utils import _config, ellipsis, get_command_args
@@ -32,24 +32,29 @@ def command_calc(update: Update, context: CallbackContext) -> None:
                      replace('ln(',  'l(').\
                      replace('exp(', 'e(').\
                      replace('pi', '(4*a(1))')
+
+    context.bot_data['actions'].append(update.message.chat_id, ChatAction.TYPING)
+
     with subprocess.Popen(['bc', '-l'], stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
         proc.stdin.write(bytes(statement + '\n', encoding='utf8'))
 
         try:
             stdout, stderr = proc.communicate(timeout=5)
-            stdout = stdout.decode('utf8').strip().replace('\\\n', '')
-            stderr = stderr.decode('utf8').strip().replace('\\\n', '')
+            stdout = stdout.decode('utf8').strip().replace(r'\n', '')
+            stderr = stderr.decode('utf8').strip().replace(r'\n', '')
+
+            if stderr:
+                update.message.reply_text('Error: ' + stderr, quote=False)
+            elif stdout:
+                if '.' in stdout:
+                    stdout = RX_TRAILING_ZEROS.sub('', stdout)
+                nag = '. Seems obvious.' if statement == stdout else ''
+                update.message.reply_text(ellipsis('%s = %s%s' % (text, stdout, nag), 4096), quote=False)
+            else:
+                update.message.reply_text('Something came up.', quote=False)
+            proc.wait()
         except subprocess.TimeoutExpired:
             update.message.reply_text('Timeout.', quote=False)
             proc.kill()
 
-        if stderr:
-            update.message.reply_text('Error: ' + stderr, quote=False)
-        elif stdout:
-            if '.' in stdout:
-                stdout = RX_TRAILING_ZEROS.sub('', stdout)
-            nag = '. Seems obvious.' if statement == stdout else ''
-            update.message.reply_text(ellipsis('%s = %s%s' % (text, stdout, nag), 4096), quote=False)
-        else:
-            update.message.reply_text('Something came up.', quote=False)
-        proc.wait()
+    context.bot_data['actions'].remove(update.message.chat_id, ChatAction.TYPING)

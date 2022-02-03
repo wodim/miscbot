@@ -52,7 +52,8 @@ def command_chatbot(update: Update, context: CallbackContext) -> None:
              update.message.reply_to_message.from_user.id == context.bot_data['me'].id)):
         return
 
-    if update.message.reply_to_message and update.message.reply_to_message.text:
+    if (update.message.reply_to_message and update.message.reply_to_message.text and
+            update.message.reply_to_message.from_user.id != context.bot_data['me'].id):
         text = update.message.reply_to_message.text
     elif update.message.text:
         text = update.message.text

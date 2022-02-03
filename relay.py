@@ -25,7 +25,9 @@ def command_relay_photo(update: Update, context: CallbackContext) -> None:
     scrambles the caption if any and sends to the matching channel"""
     context.bot_data['message_history'].push(update.message)
 
-    if update.message.sticker and not update.message.sticker.is_animated:
+    if update.message.sticker:
+        if update.message.sticker.is_animated:
+            return
         filename = context.bot.get_file(update.message.sticker.file_id).\
             download(custom_path=get_random_string(12) + '.jpg')
     else:
