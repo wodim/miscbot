@@ -47,8 +47,8 @@ class Actions:
 
     def dump(self) -> str:
         if self.pending_actions:
-            return f'pending actions: {self.pending_actions}'
-        return 'no pending actions'
+            return f'Pending actions: {self.pending_actions}'
+        return 'No pending actions.'
 
 
 class Edits:
@@ -105,5 +105,5 @@ class Edits:
     def dump(self) -> str:
         if self.pending_edits:
             edits = {f'{x[0].message_id}@{x[0].chat_id}': x[1] for x in self.pending_edits}
-            return f'pending edits: {edits}'
-        return 'no pending edits'
+            return f'Pending edits: {edits}'
+        return 'No pending edits.'

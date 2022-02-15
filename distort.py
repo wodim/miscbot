@@ -17,7 +17,7 @@ from utils import _config, get_random_string, logger, remove_command
 
 
 DISTORT_FORMAT = 'jpg'
-MAX_SCORE = 800 * 600 * 1000
+MAX_SCORE = 800 * 600 * 10000
 
 wand_semaphore = threading.Semaphore(int(_config('max_concurrent_distorts')))
 
@@ -66,10 +66,38 @@ def sub_invert(source: str, output: str = '') -> str:
 
 
 FFMPEG_CMD_GET_INFO = "ffprobe -v error -select_streams v:0 -count_packets -show_entries stream=nb_read_packets,avg_frame_rate,width,height -of csv=p=0 '{source}'"
-FFMPEG_CMD_HAS_AUDIO = "ffprobe -v error -select_streams a:0 -show_entries stream=index -of csv=p=0 '{source}'"
+def _get_video_info(filename):
+    output = subprocess.check_output(FFMPEG_CMD_GET_INFO.format(source=filename), shell=True).decode('utf8').strip()
+    try:
+        parts = output.split(',')
+        width = int(parts[0])
+        height = int(parts[1])
+        fps = parts[2]
+        frame_count = int(parts[3])
+    except (ValueError, IndexError):
+        raise ValueError("This doesn't look like a valid video.")
+    return width, height, frame_count, fps
+
+
 FFMPEG_CMD_EXTRACT = "ffmpeg -hide_banner -i '{source}' -vsync vfr -map 0:v:0 -q:v 2 '{prefix}-%06d." + DISTORT_FORMAT + "'"
+def _extract_video_frames(filename, prefix):
+    if subprocess.call(FFMPEG_CMD_EXTRACT.format(source=filename, prefix=prefix), shell=True) != 0:
+        raise ValueError('Error extracting frames.')
+    return sorted(glob(f'{prefix}*.{DISTORT_FORMAT}'))
+
+
+FFMPEG_CMD_HAS_AUDIO = "ffprobe -v error -select_streams a:0 -show_entries stream=index -of csv=p=0 '{source}'"
 FFMPEG_CMD_COMPOSE = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -map_metadata -1 -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
-FFMPEG_CMD_COMPOSE_WITH_AUDIO = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -i '{original}' -map_metadata -1 -map 0:v -map 1:a -af 'vibrato=d=1,vibrato=d=.5' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
+FFMPEG_CMD_COMPOSE_WITH_AUDIO = "ffmpeg -framerate {fps} -i '{prefix}-distort-%06d." + DISTORT_FORMAT + "' -i '{original}' -map_metadata -1 -map 0:v -map 1:a -af 'vibrato=d=1,vibrato=d=.5,aformat=s16p' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p '{prefix}.mp4'"
+def _compose_video(filename, fps, prefix):
+    if len(subprocess.check_output(FFMPEG_CMD_HAS_AUDIO.format(source=filename), shell=True)) > 1:
+        if subprocess.call(FFMPEG_CMD_COMPOSE_WITH_AUDIO.format(fps=fps, prefix=prefix, original=filename), shell=True) != 0:
+            raise ValueError('Error generating video.')
+    else:
+        if subprocess.call(FFMPEG_CMD_COMPOSE.format(fps=fps, prefix=prefix), shell=True) != 0:
+            raise ValueError('Error generating video.')
+
+
 MIN_DISTORT = 0
 MAX_DISTORT = 80
 PHOTO_TO_GIF_FRAMES = 100
@@ -84,36 +112,20 @@ def sub_distort_animation(filename: str, context: CallbackContext, progress_msg)
         return '%s-distort-%06d%s' % (source[:len(source) - 4], i, source[len(source) - 4:])
 
     if filename.endswith('.mp4'):
-        output = subprocess.check_output(FFMPEG_CMD_GET_INFO.format(source=filename), shell=True).decode('utf8').strip()
-        context.bot_data['edits'].append_edit(progress_msg, '0.1%…')
-        try:
-            parts = output.split(',')
-            width = int(parts[0])
-            height = int(parts[1])
-            fps = parts[2]
-            frame_count = int(parts[3])
-        except (ValueError, IndexError):
-            raise ValueError("This doesn't look like a valid video.")
+        context.bot_data['edits'].append_edit(progress_msg, 'Performing some checks on the video…')
+        width, height, frame_count, fps = _get_video_info(filename)
 
         score = frame_count * width * height
         if score > MAX_SCORE:
             raise ValueError(f'Video is too long or too large ({score}; maximum is {MAX_SCORE}).')
 
-        output = subprocess.check_output(FFMPEG_CMD_HAS_AUDIO.format(source=filename), shell=True)
-        context.bot_data['edits'].append_edit(progress_msg, '0.2%…')
-        has_audio = len(output) > 1
-
         prefix = get_random_string(32)
 
-        if subprocess.call(FFMPEG_CMD_EXTRACT.format(source=filename, prefix=prefix), shell=True) != 0:
-            raise ValueError('Error extracting frames.')
-        context.bot_data['edits'].append_edit(progress_msg, '0.3%…')
-
-        frames = sorted(glob(f'{prefix}*.{DISTORT_FORMAT}'))
+        context.bot_data['edits'].append_edit(progress_msg, 'Extracting frames…')
+        frames = _extract_video_frames(filename, prefix)
     else:
         frames = [filename] * PHOTO_TO_GIF_FRAMES
         fps = 30
-        has_audio = False
         prefix = filename[:-4]
 
     distorted = []
@@ -123,12 +135,7 @@ def sub_distort_animation(filename: str, context: CallbackContext, progress_msg)
                                      scale=remap(i, 0, len(frames) - 1, MIN_DISTORT, MAX_DISTORT)))
 
     context.bot_data['edits'].append_edit(progress_msg, '99.' + '9' * random.randint(1, 9) + '%…')
-    if has_audio:
-        if subprocess.call(FFMPEG_CMD_COMPOSE_WITH_AUDIO.format(fps=fps, prefix=prefix, original=filename), shell=True) != 0:
-            raise ValueError('Error generating video.')
-    else:
-        if subprocess.call(FFMPEG_CMD_COMPOSE.format(fps=fps, prefix=prefix), shell=True) != 0:
-            raise ValueError('Error generating video.')
+    _compose_video(filename, fps, prefix)
     context.bot_data['edits'].flush_edits(progress_msg)
 
     if filename.endswith('.mp4'):
@@ -140,7 +147,7 @@ def sub_distort_animation(filename: str, context: CallbackContext, progress_msg)
     return prefix + '.mp4'
 
 
-FFMPEG_CMD_AUDIO = "ffmpeg -i '{original}' -map_metadata -1 -af 'vibrato=d=1,vibrato=d=.5' -vbr on -c:a libopus '{prefix}.ogg'"
+FFMPEG_CMD_AUDIO = "ffmpeg -i '{original}' -map_metadata -1 -af 'vibrato=d=1,vibrato=d=.5,aformat=s16p' -vbr on -c:a libopus '{prefix}.ogg'"
 def sub_distort_audio(filename: str) -> str:
     prefix = 'distort_' + filename[:-4]
     if subprocess.call(FFMPEG_CMD_AUDIO.format(original=filename, prefix=prefix), shell=True) != 0:
@@ -148,7 +155,7 @@ def sub_distort_audio(filename: str) -> str:
     return prefix + '.ogg'
 
 
-FFMPEG_CMD_VOICE = "ffmpeg -i '{original}' -map_metadata -1 -vbr on -c:a libopus '{prefix}.ogg'"
+FFMPEG_CMD_VOICE = "ffmpeg -i '{original}' -map_metadata -1 -af 'aformat=s16p' -vbr on -c:a libopus '{prefix}.ogg'"
 def sub_to_voice(filename: str) -> str:
     prefix = 'voice_' + filename[:-4]
     if subprocess.call(FFMPEG_CMD_VOICE.format(original=filename, prefix=prefix), shell=True) != 0:
@@ -165,12 +172,12 @@ def sub_distort_animated_sticker(filename: str, scale: int) -> str:
             return clamp(round(n + n * random.uniform(-scale, scale), 1), -512, 512)
         if isinstance(input_, dict):
             return {x: distort(y) if isinstance(y, float) else dict_distort(y) for x, y in input_.items()}
-        elif isinstance(input_, list):
-            if len(input_) == 4 and all([isinstance(x, (float, int)) for x in input_]):
+        if isinstance(input_, list):
+            if len(input_) == 4 and all(isinstance(x, (float, int)) for x in input_):
                 # lists of 4 elements are colours. don't modify them
                 return [round(x, 2) if isinstance(x, float) else x for x in input_]
             return [distort(x) if isinstance(x, float) else dict_distort(x) for x in input_]
-        elif isinstance(input_, float):
+        if isinstance(input_, float):
             return distort(input_)
         return input_
 

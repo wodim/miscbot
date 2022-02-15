@@ -5,20 +5,29 @@ from textwrap import wrap
 
 from telegram import ChatAction, Update
 from telegram.constants import MAX_MESSAGE_LENGTH
+from telegram.error import NetworkError
 from telegram.ext import CallbackContext
 
 from utils import get_random_string
 
 
-FFMPEG_CMD_CONCATENATE = "ffmpeg {inputs} -filter_complex '{streams}concat=n={input_count}:v=0:a=1[out]' -map '[out]' -map_metadata -1 -vbr on -c:a libopus '{output}'"
+def command_sound_list(update: Update, _: CallbackContext) -> str:
+    """lists all the sound folders"""
+    update.message.reply_text(' '.join(sorted(['/' + folder.replace('sound/', '').lower()
+                                               for folder in glob('sound/*')])))
+
+
+FFMPEG_CMD_CONCATENATE = ("ffmpeg {inputs} -filter_complex '{streams}concat=n={input_count}:v=0:a=1[out]' "
+                          "-map '[out]' -map_metadata -1 -vbr on -c:a libopus '{output}'")
 FFMPEG_INPUT_FORMAT = "-i '{input_}' "
 FFMPEG_STREAM_FORMAT = '[{i}:0]'
-def command_vox(update: Update, context: CallbackContext) -> str:
+def command_sound(update: Update, context: CallbackContext) -> str:
+    """merges one or several audios into a single voice message"""
     command = update.message.text.split(' ')[0][1:].replace('@' + context.bot_data['me'].username, '')
     # this safeguard is not really necessary, but better safe than sorry
     if not all(x.isalnum() for x in command):
         return
-    folder = f'sound/{command}/'
+    folder = f'sound/{command}/'.lower()
 
     # print help message if no params
     if not context.args:
@@ -55,7 +64,10 @@ def command_vox(update: Update, context: CallbackContext) -> str:
         context.bot_data['actions'].remove(update.message.chat_id, ChatAction.RECORD_VOICE)
         return
 
-    update.message.reply_voice(voice=open(output, 'rb'), quote=False)
+    try:
+        update.message.reply_voice(voice=open(output, 'rb'), quote=False)
+    except NetworkError:
+        update.message.reply_text('The resulting file is too big.')
 
     context.bot_data['actions'].remove(update.message.chat_id, ChatAction.RECORD_VOICE)
 

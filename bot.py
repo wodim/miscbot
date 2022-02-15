@@ -23,11 +23,11 @@ from message_history import MessageHistory
 from queues import Actions, Edits
 from relay import (command_relay_chat_photo, command_relay_text, command_relay_photo,
                    cron_delete)
+from sound import command_sound, command_sound_list
 from text import command_fortune, command_tip, command_oiga
 from translate import command_scramble, command_translate
 from utils import (_config, capitalize, clean_up, ellipsis, get_command_args, get_relays,
                    is_admin, remove_punctuation, send_admin_message)
-from vox import command_vox
 
 
 log_semaphore = threading.Semaphore()
@@ -84,7 +84,7 @@ def command_flush(update: Update, _: CallbackContext) -> None:
     """flush the pending action list"""
     if is_admin(update.message.from_user.id):
         actions.flush()
-        update.message.reply_text('done')
+        update.message.reply_text('Done.')
     else:
         update.message.reply_animation(_config('error_animation'))
 
@@ -133,6 +133,11 @@ def callback_all(update: Update, _: CallbackContext) -> None:
         return
     banned_users = [int(x.strip()) for x in _config('banned_users').split(',')]
     if update.message.from_user.id in banned_users:
+        raise DispatcherHandlerStop()
+    muted_groups = [int(x.strip()) for x in _config('muted_groups').split(',')]
+    if (not is_admin(update.message.from_user.id) and
+            update.message.chat.type in ('group', 'supergroup') and
+            update.message.chat.id in muted_groups):
         raise DispatcherHandlerStop()
 
 
@@ -183,7 +188,7 @@ def command_send(update: Update, context: CallbackContext) -> None:
 def command_clear(update: Update, _: CallbackContext) -> None:
     """clears all temporary files"""
     if files := (glob('*.jpg') + glob('*.webm') + glob('*.tgs') + glob('*.webp') +
-                 glob('translate_tmp_*.txt') + glob('*.mp4')):
+                 glob('translate_tmp_*.txt') + glob('*.mp4') + glob('*.ogg')):
         for file in files:
             os.remove(file)
         all_files = ' '.join(files)
@@ -192,13 +197,18 @@ def command_clear(update: Update, _: CallbackContext) -> None:
         update.message.reply_text('There were no temporary files to remove.')
 
 
+def command_load(update: Update, _: CallbackContext) -> None:
+    """returns the current load average"""
+    update.message.reply_text(f'Load average: {str(os.getloadavg())[1:-1]}')
+
+
 def command_help(update: Update, _: CallbackContext) -> None:
     commands = []
     for _, handlers in dispatcher.handlers.items():
         for handler in handlers:
             if isinstance(handler, CommandHandler):
-                for command in handler.command:
-                    commands.append(f'/{command}')
+                if len(handler.command) == 1:
+                    commands.append(f'/{handler.command[0]}')
     update.message.reply_text(' '.join(commands))
 
 
@@ -240,7 +250,7 @@ if __name__ == '__main__':
                                                                    Filters.status_update.delete_chat_photo),
                                           command_relay_chat_photo, run_async=True), group=-20)
 
-    # banned users
+    # banned users and muted groups
     dispatcher.add_handler(TypeHandler(Update, callback_all), group=-10)
 
     # automated responses
@@ -262,6 +272,8 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('info', command_info), group=40)
     dispatcher.add_handler(CommandHandler('text', command_text), group=40)
     dispatcher.add_handler(CommandHandler('send', command_send), group=40)
+    dispatcher.add_handler(CommandHandler('sound', command_sound_list), group=40)
+    dispatcher.add_handler(CommandHandler('load', command_load), group=40)
     dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('clear', command_clear, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)
@@ -269,7 +281,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('distort', command_distort, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('voice', command_voice, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('invert', command_invert, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler(['vox', 'fvox', 'hgrunt'], command_vox, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler([x.replace('sound/', '') for x in glob('sound/*')], command_sound, run_async=True), group=40)
     # CommandHandlers don't work on captions, so all photos with a caption are sent to a
     # fun that will check for the command and then run command_distort if necessary
     dispatcher.add_handler(MessageHandler(Filters.caption & Filters.chat_type.group,

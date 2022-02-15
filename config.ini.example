@@ -32,3 +32,7 @@ max_concurrent_distorts = 3
 chatbot_language = spanish
 ; percent of messages the chatbot will reply to even when not mentioned
 chatbot_random_chance = 2.5
+; these users will be ignored in public and private
+banned_users = 123123123
+; the bot will ignore all commands in these groups, but logs will keep being stored
+muted_groups = -123123123

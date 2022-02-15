@@ -39,17 +39,17 @@ def command_calc(update: Update, context: CallbackContext) -> None:
         proc.stdin.write(bytes(statement + '\n', encoding='utf8'))
 
         try:
-            stdout, stderr = proc.communicate(timeout=5)
+            stdout, stderr = proc.communicate(timeout=int(_config('calc_timeout')))
             stdout = stdout.decode('utf8').strip().replace(r'\n', '')
             stderr = stderr.decode('utf8').strip().replace(r'\n', '')
 
             if stderr:
-                update.message.reply_text('Error: ' + stderr, quote=False)
+                update.message.reply_text(f'Error: {stderr}', quote=False)
             elif stdout:
                 if '.' in stdout:
                     stdout = RX_TRAILING_ZEROS.sub('', stdout)
                 nag = '. Seems obvious.' if statement == stdout else ''
-                update.message.reply_text(ellipsis('%s = %s%s' % (text, stdout, nag), 4096), quote=False)
+                update.message.reply_text(ellipsis(f'{text} = {stdout}{nag}', 4096), quote=False)
             else:
                 update.message.reply_text('Something came up.', quote=False)
             proc.wait()
