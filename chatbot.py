@@ -4,7 +4,7 @@ import statistics
 from telegram import ChatAction, Update
 from telegram.ext import CallbackContext
 
-from utils import _config, logger, remove_punctuation
+from utils import _config, _config_list, get_random_line, logger, remove_punctuation
 
 
 def sub_get_reply(chat_id: int, input_: str, stemmer, stopwords) -> str:
@@ -46,6 +46,8 @@ def sub_get_reply(chat_id: int, input_: str, stemmer, stopwords) -> str:
 def command_chatbot(update: Update, context: CallbackContext) -> None:
     """sends back a chatbot response"""
     my_username = f"@{context.bot_data['me'].username}".lower()
+    if update.message.chat.id in _config_list('muted_groups', int):
+        return
     if not (random.random() <= float(_config('chatbot_random_chance')) / 100 or
             my_username in update.message.text or
             (update.message.reply_to_message and
@@ -66,7 +68,7 @@ def command_chatbot(update: Update, context: CallbackContext) -> None:
         reply = sub_get_reply(update.message.chat_id,
                               text.replace(my_username, ''),
                               context.bot_data['stemmer'],
-                              context.bot_data['stopwords']) or '?'
+                              context.bot_data['stopwords']) or get_random_line('noreply.txt')
         update.message.reply_text(reply)
     finally:
         context.bot_data['actions'].remove(update.message.chat_id, ChatAction.TYPING)

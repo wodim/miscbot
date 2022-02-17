@@ -26,8 +26,9 @@ from relay import (command_relay_chat_photo, command_relay_text, command_relay_p
 from sound import command_sound, command_sound_list
 from text import command_fortune, command_tip, command_oiga
 from translate import command_scramble, command_translate
-from utils import (_config, capitalize, clean_up, ellipsis, get_command_args, get_relays,
-                   is_admin, remove_punctuation, send_admin_message)
+from utils import (_config, _config_list, capitalize, clean_up, ellipsis,
+                   get_command_args, get_relays, is_admin, remove_punctuation,
+                   send_admin_message)
 
 
 log_semaphore = threading.Semaphore()
@@ -131,13 +132,11 @@ def callback_all(update: Update, _: CallbackContext) -> None:
     this callback stops any other handlers from executing"""
     if not hasattr(update.message, 'from_user'):
         return
-    banned_users = [int(x.strip()) for x in _config('banned_users').split(',')]
-    if update.message.from_user.id in banned_users:
+    if update.message.from_user.id in _config_list('banned_users', int):
         raise DispatcherHandlerStop()
-    muted_groups = [int(x.strip()) for x in _config('muted_groups').split(',')]
     if (not is_admin(update.message.from_user.id) and
             update.message.chat.type in ('group', 'supergroup') and
-            update.message.chat.id in muted_groups):
+            update.message.chat.id in _config_list('muted_groups', int)):
         raise DispatcherHandlerStop()
 
 
@@ -202,11 +201,32 @@ def command_load(update: Update, _: CallbackContext) -> None:
     update.message.reply_text(f'Load average: {str(os.getloadavg())[1:-1]}')
 
 
+def command_config(update: Update, _: CallbackContext) -> None:
+    """replies with the entire config file, partially redacted if called in
+    a public chat or by someone who's not an admin"""
+    is_admin_chat = update.message.chat.id in _config_list('admins', int)
+    is_secret = lambda x: x in (
+        'token chat_relays chat_relay_delete_channel banned_users '
+        '4chan_cron_chat_id muted_groups'
+    ).split(' ')
+    should_show = lambda x: not is_secret(x) or (is_secret(x) and is_admin_chat)
+    update.message.reply_text('\n'.join([
+        '<strong>%s = </strong>%s' % (
+            html.escape(x), html.escape(y) if should_show(x) else '<em>(hidden)</em>'
+        ) for x, y in _config()
+    ]), quote=False, parse_mode=PARSEMODE_HTML, disable_web_page_preview=True)
+
+
 def command_help(update: Update, _: CallbackContext) -> None:
+    """returns a list of all available commands"""
     commands = []
     for _, handlers in dispatcher.handlers.items():
         for handler in handlers:
             if isinstance(handler, CommandHandler):
+                # TODO this is here because we don't want the entire list of
+                # sound directories in the output of /help, but if we ever
+                # add another handler with several commands we will have to
+                # rework it or they won't show either.
                 if len(handler.command) == 1:
                     commands.append(f'/{handler.command[0]}')
     update.message.reply_text(' '.join(commands))
@@ -274,6 +294,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('send', command_send), group=40)
     dispatcher.add_handler(CommandHandler('sound', command_sound_list), group=40)
     dispatcher.add_handler(CommandHandler('load', command_load), group=40)
+    dispatcher.add_handler(CommandHandler('config', command_config), group=40)
     dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('clear', command_clear, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)

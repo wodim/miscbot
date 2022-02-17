@@ -14,11 +14,13 @@ logging.basicConfig(format=format_, style='{', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def _config(k: str) -> str:
+def _config(k: str = None) -> str:
     """returns a configuration value from the config file or None if it does
     not exist"""
     config = configparser.ConfigParser()
     config.read('config.ini')
+    if not k:
+        return config.items('bot')
     try:
         return config['bot'][k]
     except:
@@ -77,23 +79,26 @@ def get_command_args(update, use_quote: bool = True) -> str:
     return None
 
 
-def get_admins() -> dict:
-    if admins := _config('admins'):
-        return [int(x.strip()) for x in admins.split(',')]
+def _config_list(k, type_=string):
+    """parses lists in config values"""
+    if values := _config(k):
+        return [type_(x.strip()) for x in values.split(',')]
     return []
 
 
 def is_admin(user_id: int) -> bool:
-    return user_id in get_admins()
+    """is this user id in the list of admins?"""
+    return user_id in _config_list('admins', int)
 
 
 def send_admin_message(bot, text: str) -> None:
     """sends a message to all admins"""
-    for user_id in get_admins():
+    for user_id in _config_list('admins', int):
         bot.send_message(user_id, text)
 
 
 def get_random_string(l):
+    """get a random string of length l"""
     return ''.join(random.choices(string.ascii_lowercase + string.digits, k=l))
 
 
