@@ -98,7 +98,7 @@ def _compose_video(filename, fps, prefix):
             raise ValueError('Error generating video.')
 
 
-MIN_DISTORT = 0
+MIN_DISTORT = .1
 MAX_DISTORT = 80
 PHOTO_TO_GIF_FRAMES = 100
 RX_NUMBER = re.compile(r'\-\d{6}')
@@ -211,6 +211,9 @@ def command_voice(update: Update, context: CallbackContext) -> None:
     elif update.message.reply_to_message and update.message.reply_to_message.voice:
         filename = context.bot.get_file(update.message.reply_to_message.voice.file_id).\
             download(custom_path=get_random_string(12) + '.ogg')
+    elif update.message.reply_to_message and update.message.reply_to_message.document:
+        filename = context.bot.get_file(update.message.reply_to_message.document.file_id).\
+            download(custom_path=get_random_string(12) + '.ogg')
     else:
         update.message.reply_text('Quote an audio file to have it converted into a voice message.')
         return
@@ -260,7 +263,7 @@ def command_distort(update: Update, context: CallbackContext) -> None:
         filename = context.bot.get_file(obj).download(custom_path=f'{get_random_string(12)}.{extension}')
         text = update.message.caption or update.message.text
     if not filename:
-        update.message.reply_text('Nothing to distort. Upload or quote a photo, video, GIF, or sticker.')
+        update.message.reply_text('Nothing to distort. Upload or quote a photo, video, GIF, sticker, audio, or voice message.')
         return
 
     if filename.endswith('.jpg') or filename.endswith('.webp'):

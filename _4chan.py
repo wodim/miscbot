@@ -12,7 +12,7 @@ from telegram.constants import PARSEMODE_MARKDOWN_V2
 from telegram.ext import CallbackContext
 from telegram.utils.helpers import escape_markdown
 
-from utils import _config, logger
+from utils import _config, _config_list, logger
 
 
 class _4chan:
@@ -152,7 +152,7 @@ def post_thread(chat_id: int, context: CallbackContext, args: list = None) -> No
 
     context.bot_data['actions'].append(chat_id, ChatAction.TYPING)
 
-    board = args[0] if args else random.choice(_config('4chan_boards').split(' '))
+    board = args[0] if args else random.choice(_config_list('4chan_boards'))
     threads = _4c.threads_in_board(board)
     thread = _4c.thread_info(board, random.choice(threads))
 

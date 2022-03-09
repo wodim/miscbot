@@ -1,5 +1,6 @@
 from glob import glob
 import os
+import random
 import subprocess
 from textwrap import wrap
 
@@ -31,8 +32,8 @@ def command_sound(update: Update, context: CallbackContext) -> str:
 
     # print help message if no params
     if not context.args:
-        words = ' '.join(sorted([x.replace(folder, '').replace('.wav', '')
-                                for x in glob(f'{folder}*.wav')]))
+        words = ' '.join(['?'] + sorted([x.replace(folder, '').split('.')[0]
+                                         for x in glob(f'{folder}*')]))
         messages = wrap(words, MAX_MESSAGE_LENGTH)
         for message in messages:
             update.message.reply_text(message)
@@ -40,11 +41,18 @@ def command_sound(update: Update, context: CallbackContext) -> str:
 
     input_files = []
     for file in context.args:
-        fullpath = f'{folder}{file}.wav'
-        if not os.path.isfile(fullpath):
-            update.message.reply_text(f'Word not available: {file}')
-            return
-        input_files.append(fullpath)
+        if file == '?':
+            all_files = glob(f'{folder}*')
+            input_files.append(random.choice(all_files))
+        else:
+            if not file.isalnum():
+                update.message.reply_text(f'Nice try: {file}')
+                return
+            fullpath = glob(f'{folder}{file}.*')
+            if not fullpath or not os.path.isfile(fullpath[0]):
+                update.message.reply_text(f'Word not available: {file}')
+                return
+            input_files.append(fullpath[0])
 
     # figure out the absurdly complicated command line
     inputs = ''

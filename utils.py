@@ -79,7 +79,7 @@ def get_command_args(update, use_quote: bool = True) -> str:
     return None
 
 
-def _config_list(k, type_=string):
+def _config_list(k, type_=str):
     """parses lists in config values"""
     if values := _config(k):
         return [type_(x.strip()) for x in values.split(',')]

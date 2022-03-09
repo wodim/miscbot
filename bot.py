@@ -27,15 +27,14 @@ from sound import command_sound, command_sound_list
 from text import command_fortune, command_tip, command_oiga
 from translate import command_scramble, command_translate
 from utils import (_config, _config_list, capitalize, clean_up, ellipsis,
-                   get_command_args, get_relays, is_admin, remove_punctuation,
-                   send_admin_message)
+                   get_command_args, get_random_line, get_relays, is_admin,
+                   remove_punctuation, send_admin_message)
 
 
-log_semaphore = threading.Semaphore()
 def command_log(update: Update, context: CallbackContext) -> None:
     """logs a pickled representation of every update message to a file.
     then a stemmed version of every text message to another file."""
-    with log_semaphore:
+    with context.bot_data['log_semaphore']:
         with open('log.pickle', 'ab') as fp:
             pickle.dump(update.to_dict(), fp)
             try:
@@ -144,6 +143,8 @@ def command_trigger(update: Update, _: CallbackContext) -> None:
     """replies to some text triggers and stops handling"""
     if not update.message or not update.message.text:
         return
+    if update.message.chat.id in _config_list('muted_groups', int):
+        return
     with open('triggers.txt', 'rt', encoding='utf8') as fp:
         triggers = [x.split('\t') for x in fp.readlines()]
     for trigger, answer in triggers:
@@ -152,7 +153,7 @@ def command_trigger(update: Update, _: CallbackContext) -> None:
             raise DispatcherHandlerStop()
 
 
-def command_haiku(update: Update, _: CallbackContext) -> None:
+def command_haiku_reply(update: Update, _: CallbackContext) -> None:
     """detects haikus sent by group members and formats them"""
     if not update.message or not update.message.text:
         return
@@ -187,7 +188,7 @@ def command_send(update: Update, context: CallbackContext) -> None:
 def command_clear(update: Update, _: CallbackContext) -> None:
     """clears all temporary files"""
     if files := (glob('*.jpg') + glob('*.webm') + glob('*.tgs') + glob('*.webp') +
-                 glob('translate_tmp_*.txt') + glob('*.mp4') + glob('*.ogg')):
+                 glob('translate_tmp_*.txt') + glob('*.mp4') + glob('*.ogg') + glob('*.png')):
         for file in files:
             os.remove(file)
         all_files = ' '.join(files)
@@ -215,6 +216,13 @@ def command_config(update: Update, _: CallbackContext) -> None:
             html.escape(x), html.escape(y) if should_show(x) else '<em>(hidden)</em>'
         ) for x, y in _config()
     ]), quote=False, parse_mode=PARSEMODE_HTML, disable_web_page_preview=True)
+
+
+def command_haiku(update: Update, _: CallbackContext) -> None:
+    """sends a haiku"""
+    update.message.reply_text(get_random_line('haiku5.txt') +
+                              get_random_line('haiku7.txt') +
+                              get_random_line('haiku5.txt'), quote=False)
 
 
 def command_help(update: Update, _: CallbackContext) -> None:
@@ -250,6 +258,7 @@ if __name__ == '__main__':
         'actions': actions,
         'edits': edits,
         'me': bot.get_me(),
+        'log_semaphore': threading.Semaphore(),
         'stemmer': SnowballStemmer(_config('chatbot_language')),
     })
     dispatcher.bot_data['stopwords'] = {
@@ -295,6 +304,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('sound', command_sound_list), group=40)
     dispatcher.add_handler(CommandHandler('load', command_load), group=40)
     dispatcher.add_handler(CommandHandler('config', command_config), group=40)
+    dispatcher.add_handler(CommandHandler('haiku', command_haiku), group=40)
     dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('clear', command_clear, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)
