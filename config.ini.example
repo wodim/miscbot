@@ -3,14 +3,17 @@ token = 123123123:zzzzzzzzzzzzz
 ; format is from|to|trace, from|to|trace, ...
 chat_relays = -100123123123|-100456456456|-100444446446, -100789789789|-100234234234|-100241565634
 chat_relay_delete_channel =
+; how many minutes of messages and messages to try to forward to see if they were deleted in relays
+chat_relay_history_max_minutes = 10
+chat_relay_history_max_count = 5
 ; all languages available to be used in /translate
-all_languages = mr, ha, de, hmn, ig, mk, cy, af, hu, gd, da, sn, ur, ja, tk
+translate_all_languages = mr, ha, de, hmn, ig, mk, cy, af, hu, gd, da, sn, ur, ja, tk
 ; of those languages, which ones does the scrambler use
-scrambler_languages = ja, he, zh, hi, fi, ru, el
+translate_scrambler_languages = ja, he, zh, hi, fi, ru, el
 ; how many languages do scrambled messages go through
-scrambler_languages_count = 12
+translate_scrambler_count = 12
 ; this is the default output language used by the translator
-default_language = es
+translate_default_language = es
 ; chat ids of admins who can use /restart
 admins = 123123123
 ; file id for the gif that is sent to those who use /restart with no privileges
@@ -19,13 +22,15 @@ error_animation = CgACAgQAAxkBAAJmjmHYLeMwbHUxlUFKrtrYNZibph2yAAJ1AgACG2CVUljvmK
 ; file id for the gif that is sent when the bot is brought back to life
 restart_animation = CgACAgQAAxkBAAJnXWHaBNqU2EELROLed0alvigmKjLCAALiCgAC84HQUm-vp5donIGiIwQ
 stats_url = http://2.vortigaunt.net/CHAT_ID.html
+; how many times a translation will be attempted before giving up
+translate_retries = 1000
 ; these are used by the translate module: how many times a single request is retried,
 ; and the timeout for every one of those requests
 translate_http_retries = 3
 translate_http_timeout = 3
 ; how many images will the bot distort at the same time. distorting an image is
 ; a cpu and memory intensive process, so this needs to be capped
-max_concurrent_distorts = 3
+distort_max_concurrent = 3
 4chan_boards = r9k wsg g v
 4chan_cron_chat_id = -123123123123
 ; this language is using for stemming and stopword detection
@@ -36,3 +41,17 @@ chatbot_random_chance = 2.5
 banned_users = 123123123
 ; the bot will ignore all commands in these groups, but logs will keep being stored
 muted_groups = -123123123
+; max number of threads that will be spawned to dispatch handlers
+num_threads = 16
+; every time a user asks to distort a video, a score is calculated: w*h*frames
+; if the score of a video is higher than this, the bot refuses to distort it
+distort_video_max_score = 5000000000
+; image format used for intermediate images when distorting videos
+distort_temporary_format = jpg
+; min and max bounds of scale used when distorting videos or animations
+distort_video_min_scale = .1
+distort_video_max_scale = 80
+; when distorting a photo into an animation, how many frames to generate?
+distort_photo_to_animation_frames = 100
+; max number of results to be returned when searching for fortunes
+fortune_max_results = 5

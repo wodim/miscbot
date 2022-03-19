@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
 
+from utils import _config
+
 
 class MessageHistory:
     HISTORY_MINUTES = 10
@@ -8,6 +10,8 @@ class MessageHistory:
     def __init__(self):
         self.history = {}
         self.pending_removals = []
+        self.HISTORY_MINUTES = int(_config('chat_relay_history_max_minutes'))
+        self.HISTORY_COUNT = int(_config('chat_relay_history_max_count'))
 
     def push(self, message):
         if message.chat_id not in self.history:

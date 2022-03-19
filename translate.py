@@ -14,7 +14,7 @@ from utils import (_config, clean_up, ellipsis, get_command_args,
 
 def sub_translate(text, languages):
     """translate, or else"""
-    while True:
+    for _ in range(int(_config('translate_retries'))):
         logger.info('Translating %s "%s"', '->'.join(languages), ellipsis(text, 6))
         try:
             if os.path.exists('translate-ng'):
@@ -27,6 +27,7 @@ def sub_translate(text, languages):
                 it = iter(results)
                 os.remove(filename)
                 return results[-2], list(zip(it, it))
+            raise RuntimeError("can't translate: helper program does not exist")
         except:
             pass
 
@@ -47,7 +48,7 @@ def command_translate(update: Update, context: CallbackContext) -> None:
     messages..."""
     text = get_command_args(update, use_quote=update.message.text.startswith('/translate'))
 
-    lang_from, lang_to = 'auto', _config('default_language')
+    lang_from, lang_to = 'auto', _config('translate_default_language')
     if not context.args:
         # there are no parameters to the command so use default options
         pass
@@ -62,7 +63,7 @@ def command_translate(update: Update, context: CallbackContext) -> None:
         update.message.reply_text("Source and target languages can't be the same.")
         return
 
-    all_languages = sorted([x.strip() for x in _config('all_languages').split(',')])
+    all_languages = sorted([x.strip() for x in _config('translate_all_languages').split(',')])
 
     if lang_from not in all_languages + ['auto']:
         update.message.reply_text(f'Invalid source language "{lang_from}" provided.')
@@ -72,10 +73,13 @@ def command_translate(update: Update, context: CallbackContext) -> None:
         return
 
     if not text or not text.strip():
-        update.message.reply_text((TRANSLATE_USAGE % _config('default_language')
+        update.message.reply_text((TRANSLATE_USAGE % _config('translate_default_language')
                                    + ', '.join(all_languages)),
                                   parse_mode=PARSEMODE_HTML)
         return
+
+    if text.startswith('. '):
+        text = text[2:]
 
     context.bot_data['actions'].append(update.message.chat_id, ChatAction.TYPING)
 
@@ -93,11 +97,11 @@ def command_translate(update: Update, context: CallbackContext) -> None:
 def get_scramble_languages() -> list[str]:
     """returns a random list of languages to be used by the translator to
     scramble text"""
-    languages = [x.strip() for x in _config('scrambler_languages').split(',')]
+    languages = [x.strip() for x in _config('translate_scrambler_languages').split(',')]
     random.shuffle(languages)
     return (['auto'] +
-            languages[:int(_config('scrambler_languages_count'))] +
-            [_config('default_language')])
+            languages[:int(_config('translate_scrambler_count'))] +
+            [_config('translate_default_language')])
 
 
 def command_scramble(update: Update, context: CallbackContext) -> None:

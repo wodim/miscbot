@@ -202,20 +202,31 @@ def command_load(update: Update, _: CallbackContext) -> None:
     update.message.reply_text(f'Load average: {str(os.getloadavg())[1:-1]}')
 
 
-def command_config(update: Update, _: CallbackContext) -> None:
+def command_config(update: Update, context: CallbackContext) -> None:
     """replies with the entire config file, partially redacted if called in
     a public chat or by someone who's not an admin"""
-    is_admin_chat = update.message.chat.id in _config_list('admins', int)
-    is_secret = lambda x: x in (
-        'token chat_relays chat_relay_delete_channel banned_users '
-        '4chan_cron_chat_id muted_groups'
-    ).split(' ')
-    should_show = lambda x: not is_secret(x) or (is_secret(x) and is_admin_chat)
-    update.message.reply_text('\n'.join([
-        '<strong>%s = </strong>%s' % (
-            html.escape(x), html.escape(y) if should_show(x) else '<em>(hidden)</em>'
-        ) for x, y in _config()
-    ]), quote=False, parse_mode=PARSEMODE_HTML, disable_web_page_preview=True)
+    def format_config_key(k: str, v: str) -> str:
+        is_admin_chat = update.message.chat.id in _config_list('admins', int)
+        is_secret = lambda k: k in (
+            'token chat_relays chat_relay_delete_channel banned_users '
+            '4chan_cron_chat_id muted_groups'
+        ).split(' ')
+        should_show = lambda k: not is_secret(k) or (is_secret(k) and is_admin_chat)
+        return '<strong>%s = </strong>%s' % (
+            html.escape(k), html.escape(v) if should_show(k) else '<em>(hidden)</em>')
+
+    if context.args:
+        k = context.args[0].lower()
+        if v := _config(k):
+            update.message.reply_text(format_config_key(k, v),
+                                      quote=False, parse_mode=PARSEMODE_HTML,
+                                      disable_web_page_preview=True)
+        else:
+            update.message.reply_text('No such key.')
+    else:
+        update.message.reply_text('\n'.join([
+                format_config_key(k, v) for k, v in sorted(_config())
+            ]), quote=False, parse_mode=PARSEMODE_HTML, disable_web_page_preview=True)
 
 
 def command_haiku(update: Update, _: CallbackContext) -> None:
@@ -242,10 +253,10 @@ def command_help(update: Update, _: CallbackContext) -> None:
 
 if __name__ == '__main__':
     # connection pool size is workers + updater + dispatcher + job queue + main thread
-    NUM_THREADS = 16
-    request = Request(con_pool_size=NUM_THREADS + 4)
+    num_threads = int(_config('num_threads'))
+    request = Request(con_pool_size=num_threads + 4)
     bot = Bot(_config('token'), request=request)
-    updater = Updater(bot=bot, workers=NUM_THREADS)
+    updater = Updater(bot=bot, workers=num_threads)
 
     message_history = MessageHistory()
     actions = Actions(bot, updater.dispatcher.job_queue)
@@ -322,7 +333,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(MessageHandler((Filters.text | Filters.poll) & ~Filters.command & Filters.chat_type.private,
                                           command_scramble, run_async=True), group=40)
     dispatcher.add_handler(MessageHandler((Filters.photo | Filters.animation | Filters.video | Filters.sticker | Filters.voice | Filters.audio) &
-                                           ~Filters.command & Filters.chat_type.private,
+                                          ~Filters.command & Filters.chat_type.private,
                                           command_distort, run_async=True), group=40)
     dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_unhandled, run_async=True), group=40)
 

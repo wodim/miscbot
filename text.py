@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.constants import MAX_MESSAGE_LENGTH
 from telegram.ext import CallbackContext
 
-from utils import get_random_line, ellipsis
+from utils import _config, ellipsis, get_random_line
 
 
 def clean_fortune(fortune: str) -> str:
@@ -20,7 +20,6 @@ def get_fortune() -> str:
     return fortune
 
 
-MAX_FORTUNE_RESULTS = 5
 def search_fortunes(criteria: str) -> str:
     """searches the fortune database for fortunes that match the criteria and
     returns them and then None if there are more results"""
@@ -32,21 +31,21 @@ def search_fortunes(criteria: str) -> str:
         if criteria.lower() in clean.lower():
             results += 1
             yield clean
-        if results >= MAX_FORTUNE_RESULTS:
+        if results >= int(_config('fortune_max_results')):
             yield None
             return
 
 
 def command_fortune(update: Update, context: CallbackContext) -> None:
     """handles the /fortune command, which prints a random fortune or a list of
-    a max of MAX_FORTUNE_RESULTS that match the parameter"""
+    a max of fortune_max_results that match the parameter"""
     def msg(text):
         update.message.reply_text(ellipsis(text, MAX_MESSAGE_LENGTH),
                                   disable_web_page_preview=True, quote=False)
     if context.args:
         if fortunes := list(search_fortunes(' '.join(context.args))):
             for fortune in fortunes:
-                msg(fortune if fortune else 'Too many results. I only showed the first %d.' % MAX_FORTUNE_RESULTS)
+                msg(fortune if fortune else 'Too many results. I only showed the first %d.' % int(_config('fortune_max_results')))
         else:
             msg('No results.')
     else:

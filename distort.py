@@ -16,10 +16,10 @@ from wand.image import Image
 from utils import _config, get_random_string, logger, remove_command
 
 
-DISTORT_FORMAT = 'jpg'
-MAX_SCORE = 800 * 600 * 10000
+DISTORT_FORMAT = _config('distort_temporary_format')
+MAX_SCORE = int(_config('distort_video_max_score'))
 
-wand_semaphore = threading.Semaphore(int(_config('max_concurrent_distorts')))
+wand_semaphore = threading.Semaphore(int(_config('distort_max_concurrent')))
 
 
 def sub_distort(source: str, output: str = '', scale: float = -1, dimension: str = '') -> str:
@@ -98,9 +98,9 @@ def _compose_video(filename, fps, prefix):
             raise ValueError('Error generating video.')
 
 
-MIN_DISTORT = .1
-MAX_DISTORT = 80
-PHOTO_TO_GIF_FRAMES = 100
+MIN_DISTORT = float(_config('distort_video_min_scale'))
+MAX_DISTORT = float(_config('distort_video_max_scale'))
+PHOTO_TO_GIF_FRAMES = int(_config('distort_photo_to_animation_frames'))
 RX_NUMBER = re.compile(r'\-\d{6}')
 def sub_distort_animation(filename: str, context: CallbackContext, progress_msg) -> str:
     """distorts an image into a video or a video"""
