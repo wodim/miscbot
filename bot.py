@@ -294,7 +294,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(TypeHandler(Update, callback_all), group=-10)
 
     # automated responses
-    dispatcher.add_handler(MessageHandler(Filters.text, command_trigger), group=30)
+    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & Filters.text, command_trigger), group=30)
 
     # commands
     dispatcher.add_handler(CommandHandler('help', command_help), group=40)
@@ -337,7 +337,8 @@ if __name__ == '__main__':
                                           command_distort, run_async=True), group=40)
     dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_unhandled, run_async=True), group=40)
 
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.update.message & Filters.chat_type.groups,
+    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & (Filters.text & ~Filters.command & Filters.update.message &
+                                                                   Filters.chat_type.groups),
                                           command_chatbot, run_async=True), group=50)
 
     # dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.update.message & Filters.chat_type.groups,
@@ -348,14 +349,9 @@ if __name__ == '__main__':
     dispatcher.job_queue.run_repeating(actions.cron, interval=4, name='actions').enabled = False
     dispatcher.job_queue.run_repeating(edits.cron, interval=3, name='edits').enabled = False
 
-    first_cron = datetime.datetime.now().astimezone()
-    if first_cron.hour % 2 == 0:
-        first_cron += datetime.timedelta(hours=2)
-    else:
-        first_cron += datetime.timedelta(hours=1)
+    first_cron = datetime.datetime.now().astimezone() + datetime.timedelta(hours=1)
     first_cron = first_cron.replace(minute=0, second=0, microsecond=0)
-    dispatcher.job_queue.run_repeating(cron_4chan, first=first_cron,
-                                       interval=60 * 60 * 2)
+    dispatcher.job_queue.run_repeating(cron_4chan, first=first_cron, interval=60 * 60)
 
     bot.set_my_commands([
         ('tip',          '📞'),

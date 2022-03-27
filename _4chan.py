@@ -113,7 +113,8 @@ class _4chan:
 
 
 def cron_4chan(context: CallbackContext) -> None:
-    if 2 < datetime.datetime.now().astimezone().hour < 10:
+    hour = datetime.datetime.now().astimezone().hour
+    if hour % 2 == 1 or 2 < hour < 10:
         return
     post_thread(int(_config('4chan_cron_chat_id')), context)
 
