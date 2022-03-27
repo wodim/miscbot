@@ -2,6 +2,7 @@ from glob import glob
 import os
 import random
 import subprocess
+import string
 from textwrap import wrap
 
 from telegram import ChatAction, Update
@@ -45,7 +46,7 @@ def command_sound(update: Update, context: CallbackContext) -> str:
             all_files = glob(f'{folder}*')
             input_files.append(random.choice(all_files))
         else:
-            if not file.isalnum():
+            if not all(x in string.ascii_letters + string.digits or x == '_' for x in file):
                 update.message.reply_text(f'Nice try: {file}')
                 return
             fullpath = glob(f'{folder}{file}.*')
