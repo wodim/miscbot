@@ -236,6 +236,25 @@ def command_haiku(update: Update, _: CallbackContext) -> None:
                               get_random_line('haiku5.txt'), quote=False)
 
 
+def command_leave(update: Update, context: CallbackContext) -> None:
+    """leaves a chat"""
+    if is_admin(update.message.from_user.id):
+        if len(context.args) != 1:
+            update.message.reply_text('Usage: /leave <chat id>')
+            return
+        try:
+            chat_id = int(context.args[0])
+        except ValueError:
+            update.message.reply_text('Chat ID must be a number.')
+            return
+        try:
+            context.bot.leave_chat(chat_id)
+        except Exception as exc:
+            update.message.reply_text(f'Error leaving chat: {exc}')
+    else:
+        update.message.reply_animation(_config('error_animation'))
+
+
 def command_help(update: Update, _: CallbackContext) -> None:
     """returns a list of all available commands"""
     commands = []
@@ -316,6 +335,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('load', command_load), group=40)
     dispatcher.add_handler(CommandHandler('config', command_config), group=40)
     dispatcher.add_handler(CommandHandler('haiku', command_haiku), group=40)
+    dispatcher.add_handler(CommandHandler('leave', command_leave), group=40)
     dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('clear', command_clear, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)
