@@ -1,6 +1,7 @@
 import datetime
 from glob import glob
 import html
+from inspect import getdoc
 import os
 import pickle
 import pprint
@@ -27,7 +28,7 @@ from sound import command_sound, command_sound_list
 from text import command_fortune, command_tip, command_oiga
 from translate import command_scramble, command_translate
 from utils import (_config, _config_list, capitalize, clean_up, ellipsis,
-                   get_command_args, get_random_line, get_relays, is_admin,
+                   get_command_args, get_random_line, get_relays, logger, is_admin,
                    remove_punctuation, send_admin_message)
 
 
@@ -81,7 +82,7 @@ def command_debug(update: Update, _: CallbackContext) -> None:
 
 
 def command_flush(update: Update, _: CallbackContext) -> None:
-    """flush the pending action list"""
+    """flushes the pending action list"""
     if is_admin(update.message.from_user.id):
         actions.flush()
         update.message.reply_text('Done.')
@@ -255,6 +256,27 @@ def command_leave(update: Update, context: CallbackContext) -> None:
         update.message.reply_animation(_config('error_animation'))
 
 
+def command_strip(update: Update, context: CallbackContext) -> None:
+    """forwards back the quoted message without a "forwarded from" header
+    or a caption if applicable"""
+    if update.message.reply_to_message and update.message.reply_to_message.effective_attachment:
+        # this is tricky
+        base_name = update.message.reply_to_message.effective_attachment.__class__.__name__
+        try:
+            fun = getattr(context.bot, f'send{base_name}')
+        except AttributeError:
+            update.message.reply_text(f"I can't handle this type of attachment: {base_name}")
+            return
+        try:
+            fun(update.message.chat.id, update.message.reply_to_message.effective_attachment)
+        except Exception as exc:
+            update.message.reply_text(f'Something happened: {exc}')
+    elif update.message.reply_to_message:
+        update.message.reply_text("This message doesn't have an attachment.")
+    else:
+        update.message.reply_text('Quote a message to have its contents dumped here.')
+
+
 def command_help(update: Update, _: CallbackContext) -> None:
     """returns a list of all available commands"""
     commands = []
@@ -266,16 +288,19 @@ def command_help(update: Update, _: CallbackContext) -> None:
                 # add another handler with several commands we will have to
                 # rework it or they won't show either.
                 if len(handler.command) == 1:
-                    commands.append(f'/{handler.command[0]}')
-    update.message.reply_text(' '.join(commands))
+                    doc = getdoc(handler.callback).replace('\n', ' ')
+                    commands.append(f'<strong>/{handler.command[0]}</strong> - {doc}')
+    update.message.reply_text('\n'.join(commands), parse_mode=PARSEMODE_HTML)
 
 
 if __name__ == '__main__':
+    logger.info('Hello!!!')
     # connection pool size is workers + updater + dispatcher + job queue + main thread
     num_threads = int(_config('num_threads'))
     request = Request(con_pool_size=num_threads + 4)
     bot = Bot(_config('token'), request=request)
     updater = Updater(bot=bot, workers=num_threads)
+    logger.info("Connected! I'm %s, running with %d threads.", bot.name, num_threads)
 
     message_history = MessageHistory()
     actions = Actions(bot, updater.dispatcher.job_queue)
@@ -289,11 +314,15 @@ if __name__ == '__main__':
         'edits': edits,
         'me': bot.get_me(),
         'log_semaphore': threading.Semaphore(),
-        'stemmer': SnowballStemmer(_config('chatbot_language')),
     })
+    logger.info('Instantiating stemmer...')
+    dispatcher.bot_data['stemmer'] = SnowballStemmer(_config('chatbot_language'))
+    logger.info('Stemming stopwords...')
     dispatcher.bot_data['stopwords'] = {
         dispatcher.bot_data['stemmer'].stem(x) for x in stopwords.words(_config('chatbot_language'))
     }
+
+    logger.info('Adding handlers...')
 
     # very low group id so it runs even for banned users
     # can't run asynchronously or the log file can get corrupted
@@ -336,6 +365,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('config', command_config), group=40)
     dispatcher.add_handler(CommandHandler('haiku', command_haiku), group=40)
     dispatcher.add_handler(CommandHandler('leave', command_leave), group=40)
+    dispatcher.add_handler(CommandHandler('strip', command_strip), group=40)
     dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('clear', command_clear, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)
@@ -364,6 +394,8 @@ if __name__ == '__main__':
     # dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.update.message & Filters.chat_type.groups,
     #                                       command_haiku, run_async=True), group=60)
 
+    logger.info('Adding jobs to the queue...')
+
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
     dispatcher.job_queue.run_repeating(actions.cron, interval=4, name='actions').enabled = False
@@ -372,6 +404,8 @@ if __name__ == '__main__':
     first_cron = datetime.datetime.now().astimezone() + datetime.timedelta(hours=1)
     first_cron = first_cron.replace(minute=0, second=0, microsecond=0)
     dispatcher.job_queue.run_repeating(cron_4chan, first=first_cron, interval=60 * 60)
+
+    logger.info('Setting commands...')
 
     bot.set_my_commands([
         ('tip',          '📞'),
@@ -385,6 +419,8 @@ if __name__ == '__main__':
         ('calc',         '🧮'),
     ])
 
+    logger.info('Booting poller...')
+
     # Start the Bot
     updater.start_polling()
 
@@ -394,6 +430,8 @@ if __name__ == '__main__':
         os.remove('restart')
     except FileNotFoundError:
         pass
+
+    logger.info("We're on!")
 
     # Run the bot until you press Ctrl-C or the process receives SIGINT,
     # SIGTERM or SIGABRT. This should be used most of the time, since

@@ -43,9 +43,7 @@ TRANSLATE_USAGE = """<b>Usage</b>
 <b>Supported languages</b>
 """
 def command_translate(update: Update, context: CallbackContext) -> None:
-    """handles the /translate command. somewhat complex because of all the cases
-    it needs to handle: omitting target or both languages, translating quoted
-    messages..."""
+    """handles the /translate command."""
     text = get_command_args(update, use_quote=update.message.text.startswith('/translate'))
 
     lang_from, lang_to = 'auto', _config('translate_default_language')
@@ -109,7 +107,7 @@ def command_scramble(update: Update, context: CallbackContext) -> None:
     text = get_command_args(update, use_quote=update.message.text.startswith('/scramble'))
 
     if not text:
-        update.message.reply_text('Scramble what? Type something or quote another message.')
+        update.message.reply_text('Scramble what? Type something or quote a message.')
         return
 
     context.bot_data['actions'].append(update.message.chat_id, ChatAction.TYPING)

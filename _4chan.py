@@ -120,6 +120,7 @@ def cron_4chan(context: CallbackContext) -> None:
 
 
 def command_thread(update: Update, context: CallbackContext) -> None:
+    """returns a random thread from a 4chan board"""
     try:
         post_thread(update.message.chat_id, context, context.args)
     except Exception as exc:
