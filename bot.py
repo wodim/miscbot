@@ -20,6 +20,7 @@ from _4chan import cron_4chan, command_thread
 from calc import command_calc
 from chatbot import command_chatbot
 from distort import command_distort, command_distort_caption, command_invert, command_voice
+import encrypt
 from message_history import MessageHistory
 from queues import Actions, Edits
 from relay import (command_relay_chat_photo, command_relay_text, command_relay_photo,
@@ -210,7 +211,7 @@ def command_config(update: Update, context: CallbackContext) -> None:
         is_admin_chat = update.message.chat.id in _config_list('admins', int)
         is_secret = lambda k: k in (
             'token chat_relays chat_relay_delete_channel banned_users '
-            '4chan_cron_chat_id muted_groups'
+            '4chan_cron_chat_id muted_groups encrypt_password encrypt_salt'
         ).split(' ')
         should_show = lambda k: not is_secret(k) or (is_secret(k) and is_admin_chat)
         return '<strong>%s = </strong>%s' % (
@@ -261,14 +262,17 @@ def command_strip(update: Update, context: CallbackContext) -> None:
     or a caption if applicable"""
     if update.message.reply_to_message and update.message.reply_to_message.effective_attachment:
         # this is tricky
-        base_name = update.message.reply_to_message.effective_attachment.__class__.__name__
+        attachment = update.message.reply_to_message.effective_attachment
+        if isinstance(attachment, list):
+            attachment = attachment[-1]
+        base_name = 'Photo' if attachment.__class__.__name__ == 'PhotoSize' else attachment.__class__.__name__
         try:
             fun = getattr(context.bot, f'send{base_name}')
         except AttributeError:
             update.message.reply_text(f"I can't handle this type of attachment: {base_name}")
             return
         try:
-            fun(update.message.chat.id, update.message.reply_to_message.effective_attachment)
+            fun(update.message.chat.id, attachment)
         except Exception as exc:
             update.message.reply_text(f'Something happened: {exc}')
     elif update.message.reply_to_message:
@@ -277,19 +281,32 @@ def command_strip(update: Update, context: CallbackContext) -> None:
         update.message.reply_text('Quote a message to have its contents dumped here.')
 
 
+def command_crypt(update: Update, context: CallbackContext) -> None:
+    """encrypts or decrypts a string"""
+    command = update.message.text.split(' ')[0][1:].replace('@' + context.bot_data['me'].username, '')
+    if len(context.args) == 0:
+        update.message.reply_text(f'Usage: /{command} <text>')
+        return
+    try:
+        update.message.reply_text(
+            getattr(encrypt, command)(' '.join(context.args[0:]),
+                                      _config('encrypt_password'),
+                                      _config('encrypt_salt')),
+            disable_web_page_preview=True
+        )
+    except ValueError:
+        update.message.reply_text("That didn't work.")
+
+
 def command_help(update: Update, _: CallbackContext) -> None:
     """returns a list of all available commands"""
     commands = []
     for _, handlers in dispatcher.handlers.items():
         for handler in handlers:
             if isinstance(handler, CommandHandler):
-                # TODO this is here because we don't want the entire list of
-                # sound directories in the output of /help, but if we ever
-                # add another handler with several commands we will have to
-                # rework it or they won't show either.
-                if len(handler.command) == 1:
-                    doc = getdoc(handler.callback).replace('\n', ' ')
-                    commands.append(f'<strong>/{handler.command[0]}</strong> - {doc}')
+                doc = getdoc(handler.callback).replace('\n', ' ')
+                slashes = ' '.join(['/' + x for x in handler.command])
+                commands.append(f'<strong>{slashes}</strong> - {doc}')
     update.message.reply_text('\n'.join(commands), parse_mode=PARSEMODE_HTML)
 
 
@@ -366,6 +383,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('haiku', command_haiku), group=40)
     dispatcher.add_handler(CommandHandler('leave', command_leave), group=40)
     dispatcher.add_handler(CommandHandler('strip', command_strip), group=40)
+    dispatcher.add_handler(CommandHandler(['decrypt', 'encrypt'], command_crypt), group=40)
     dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('clear', command_clear, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)
