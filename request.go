@@ -16,9 +16,15 @@ type translationRequest struct {
 	Text     string
 }
 
+type channelMessage struct {
+	LineID  int
+	OK      bool
+	Message string
+}
+
 const proxyErrorSentinel = "_proxy_error_sentinel_"
 
-func makeRequest(ctx context.Context, r translationRequest, resultsChan chan<- string) {
+func makeRequest(ctx context.Context, r translationRequest, resultsChan chan<- channelMessage, lineID int) {
 	var proxyErrorCount int
 	for {
 		select {
@@ -46,17 +52,17 @@ func makeRequest(ctx context.Context, r translationRequest, resultsChan chan<- s
 				if strings.HasPrefix(resp.String(), "<") {
 					// if the response starts with < it's because we have received an html page with a quota error
 					// retrying wouldn't do any good so kill this goroutine
-					resultsChan <- proxyErrorSentinel
+					resultsChan <- channelMessage{lineID, false, ""}
 					return
 				}
 				// send the result through the channel and kill this goroutine
-				resultsChan <- cleanUp(parseTranslation(*resp.Result().(*[][][]string)), false)
+				resultsChan <- channelMessage{lineID, true, cleanUp(parseTranslation(*resp.Result().(*[][][]string)), false)}
 				return
 			} else {
 				proxyErrorCount++
 				if proxyErrorCount >= cfgInt("translate_http_retries") {
 					// send a failure message through the channel and kill this goroutine
-					resultsChan <- proxyErrorSentinel
+					resultsChan <- channelMessage{lineID, false, ""}
 					return
 				}
 			}
