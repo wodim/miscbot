@@ -19,7 +19,9 @@ from telegram.utils.request import Request
 from _4chan import cron_4chan, command_thread
 from calc import command_calc
 from chatbot import command_chatbot
-from distort import command_distort, command_distort_caption, command_invert, command_voice
+from dalle import command_dalle
+from distort import (command_desticker, command_distort, command_distort_caption,
+                     command_invert, command_voice)
 import encrypt
 from message_history import MessageHistory
 from queues import Actions, Edits
@@ -391,6 +393,8 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('distort', command_distort, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('voice', command_voice, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('invert', command_invert, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('desticker', command_desticker, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('dalle', command_dalle, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler([x.replace('sound/', '') for x in glob('sound/*')], command_sound, run_async=True), group=40)
     # CommandHandlers don't work on captions, so all photos with a caption are sent to a
     # fun that will check for the command and then run command_distort if necessary
@@ -435,6 +439,7 @@ if __name__ == '__main__':
         ('stats',        '📊'),
         ('thread',       '🍀'),
         ('calc',         '🧮'),
+        ('dalle',        '🖼️'),
     ])
 
     logger.info('Booting poller...')

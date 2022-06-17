@@ -296,6 +296,29 @@ def command_invert(update: Update, context: CallbackContext) -> None:
     os.remove(inverted_filename)
 
 
+def command_desticker(update: Update, context: CallbackContext) -> None:
+    """turns a non-animated sticker into a photo"""
+    if (update.message.reply_to_message and update.message.reply_to_message.sticker
+            and not update.message.reply_to_message.sticker.is_animated):
+        filename = context.bot.get_file(update.message.reply_to_message.sticker).\
+            download(custom_path=get_random_string(12) + '.webp')
+    else:
+        update.message.reply_text('Quote a non-animated sticker.')
+        return
+
+    with wand_semaphore:
+        img = Image(filename=filename)
+        img.compression_quality = 100
+        img.save(filename=filename + '.jpg')
+        img.destroy()
+        img.close()
+
+    update.message.reply_photo(open(filename + '.jpg', 'rb'))
+
+    os.remove(filename)
+    os.remove(filename + '.jpg')
+
+
 def command_distort_animated_sticker(update: Update, context: CallbackContext, filename: str, text: str) -> None:
     """distorts and sends an animated sticker"""
     def parse_distort_params(params):
