@@ -13,7 +13,7 @@ from telegram.error import BadRequest
 from telegram.ext import CallbackContext
 from wand.image import Image
 
-from utils import _config, get_random_string, logger, remove_command
+from utils import _config, clamp, get_random_string, logger, remove_command
 
 
 DISTORT_FORMAT = _config('distort_temporary_format')
@@ -167,8 +167,6 @@ STICKER_SIZE = 512
 def sub_distort_animated_sticker(filename: str, scale: int) -> str:
     def dict_distort(input_):
         def distort(n):
-            def clamp(n, floor, ceil):
-                return max(floor, min(n, ceil))
             return clamp(round(n + n * random.uniform(-scale, scale), 1), -512, 512)
         if isinstance(input_, dict):
             return {x: distort(y) if isinstance(y, float) else dict_distort(y) for x, y in input_.items()}
@@ -214,8 +212,11 @@ def command_voice(update: Update, context: CallbackContext) -> None:
     elif update.message.reply_to_message and update.message.reply_to_message.document:
         filename = context.bot.get_file(update.message.reply_to_message.document.file_id).\
             download(custom_path=get_random_string(12) + '.ogg')
+    elif update.message.reply_to_message and update.message.reply_to_message.video:
+        filename = context.bot.get_file(update.message.reply_to_message.video.file_id).\
+            download(custom_path=get_random_string(12) + '.ogg')
     else:
-        update.message.reply_text('Quote an audio file to have it converted into a voice message.')
+        update.message.reply_text('Quote an audio or video file to have it converted into a voice message.')
         return
 
     context.bot_data['actions'].append(update.message.chat_id, ChatAction.RECORD_VOICE)

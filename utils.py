@@ -157,3 +157,6 @@ def capitalize(text):
         elif char in set('\t\n.?!'):
             upper = True
     return output
+
+def clamp(n, floor, ceil):
+    return max(floor, min(n, ceil))

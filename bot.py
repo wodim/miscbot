@@ -6,10 +6,12 @@ import os
 import pickle
 import pprint
 import signal
+import socket
 import threading
 
 from nltk.corpus import stopwords
 from nltk.stem import SnowballStemmer
+import requests
 from telegram import Bot, Update
 from telegram.constants import MAX_MESSAGE_LENGTH, PARSEMODE_HTML
 from telegram.ext import (CallbackContext, CommandHandler, DispatcherHandlerStop,
@@ -19,14 +21,16 @@ from telegram.utils.request import Request
 from _4chan import cron_4chan, command_thread
 from calc import command_calc
 from chatbot import command_chatbot
-from dalle import command_dalle
+from craiyon import command_craiyon
 from distort import (command_desticker, command_distort, command_distort_caption,
                      command_invert, command_voice)
 import encrypt
+from gfpgan import command_gfpgan
 from message_history import MessageHistory
 from queues import Actions, Edits
 from relay import (command_relay_chat_photo, command_relay_text, command_relay_photo,
                    cron_delete)
+from sd import command_sd
 from sound import command_sound, command_sound_list
 from text import command_fortune, command_tip, command_oiga
 from translate import command_scramble, command_translate
@@ -300,6 +304,41 @@ def command_crypt(update: Update, context: CallbackContext) -> None:
         update.message.reply_text("That didn't work.")
 
 
+def command_ip(update: Update, _: CallbackContext) -> None:
+    """prints geolocation information"""
+    if text := get_command_args(update):
+        def uniq(keys):
+            things = {r.get(x): None for x in keys if r.get(x)}
+            return  ', '.join(things.keys()) if things != {None: None} else None
+
+        api_key = _config('ipgeolocation_io_api_key')
+        try:
+            r = requests.get(f'https://api.ipgeolocation.io/ipgeo?ip={text}&apiKey={api_key}').json()
+        except:
+            return update.message.reply_text('An error occurred when sending the API request.')
+        if r.get('message'):
+            if 'IP to geolocation lookup for domain' in r['message']:
+                # it's a hostname so do a second pass resolving first
+                try:
+                    text = socket.gethostbyname(text)
+                    r = requests.get(f'https://api.ipgeolocation.io/ipgeo?ip={text}&apiKey={api_key}').json()
+                except:
+                    logger.exception("Couldn't resolve %s", text)
+                    return update.message.reply_text(f"Couldn't resolve {text}")
+            else:
+                logger.info('Error returned: %s', r['message'])
+                return update.message.reply_text(f'An error occurred: {r["message"]}')
+        message = f'<b>IP geolocation for {text}:</b>\n'
+        if location := uniq(['district', 'city', 'state_prov', 'country_name']):
+            message += f'<b>Location:</b> {location} <a href="https://www.google.com/maps/search/{location}/">[map]</a>\n'
+        if organization := uniq(['isp', 'organization']):
+            message += f'<b>ISP:</b> {organization}\n'
+        update.message.reply_text(message, parse_mode=PARSEMODE_HTML,
+                                  disable_web_page_preview=True)
+    else:
+        update.message.reply_text('Specify an IP address or host name.')
+
+
 def command_help(update: Update, _: CallbackContext) -> None:
     """returns a list of all available commands"""
     commands = []
@@ -322,8 +361,10 @@ if __name__ == '__main__':
     logger.info("Connected! I'm %s, running with %d threads.", bot.name, num_threads)
 
     message_history = MessageHistory()
-    actions = Actions(bot, updater.dispatcher.job_queue)
-    edits = Edits(bot, updater.dispatcher.job_queue)
+    actions_cron_interval = int(_config('actions_cron_interval'))
+    actions = Actions(bot, updater.dispatcher.job_queue, actions_cron_interval)
+    edits_cron_interval = int(_config('edits_cron_interval'))
+    edits = Edits(bot, updater.dispatcher.job_queue, edits_cron_interval)
 
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
@@ -394,7 +435,12 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('voice', command_voice, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('invert', command_invert, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('desticker', command_desticker, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler('dalle', command_dalle, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler(['craiyon', 'dalle'], command_craiyon, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('sd', command_sd, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('ai', command_craiyon, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('ai', command_sd, run_async=True), group=41)
+    dispatcher.add_handler(CommandHandler('gfpgan', command_gfpgan, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('ip', command_ip, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler([x.replace('sound/', '') for x in glob('sound/*')], command_sound, run_async=True), group=40)
     # CommandHandlers don't work on captions, so all photos with a caption are sent to a
     # fun that will check for the command and then run command_distort if necessary
@@ -420,8 +466,10 @@ if __name__ == '__main__':
 
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
-    dispatcher.job_queue.run_repeating(actions.cron, interval=4, name='actions').enabled = False
-    dispatcher.job_queue.run_repeating(edits.cron, interval=3, name='edits').enabled = False
+    if actions_cron_interval > 0:
+        dispatcher.job_queue.run_repeating(actions.cron, interval=actions_cron_interval, name='actions').enabled = False
+    if edits_cron_interval > 0:
+        dispatcher.job_queue.run_repeating(edits.cron, interval=edits_cron_interval, name='edits').enabled = False
 
     first_cron = datetime.datetime.now().astimezone() + datetime.timedelta(hours=1)
     first_cron = first_cron.replace(minute=0, second=0, microsecond=0)
@@ -439,7 +487,9 @@ if __name__ == '__main__':
         ('stats',        '📊'),
         ('thread',       '🍀'),
         ('calc',         '🧮'),
-        ('dalle',        '🖼️'),
+        ('craiyon',      '🎨'),
+        ('sd',           '🖼️'),
+        ('gfpgan',       '📈'),
     ])
 
     logger.info('Booting poller...')
