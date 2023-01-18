@@ -49,7 +49,7 @@ class SD:
             }))
         elif message['msg'] == 'estimation':
             logger.info('sd says we are at rank %d with %d seconds left', message['rank'], message['rank_eta'])
-            time_left = f'{ceil(message["rank_eta"] / 60)} minutes' if message['rank_eta'] > 60 else f'{message["rank_eta"]} seconds'
+            time_left = f'{ceil(message["rank_eta"] / 60)} minutes' if message['rank_eta'] > 60 else f'{ceil(message["rank_eta"])} seconds'
             self.edits.append_edit(self.progress_msg, (f'Stable Diffusion: in queue, {time_left} left…'))
         elif message['msg'] == 'process_starts':
             logger.info('sd says it has started to process the prompt')
