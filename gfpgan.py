@@ -30,6 +30,11 @@ def command_gfpgan(update: Update, context: CallbackContext) -> None:
         except ValueError:
             pass
 
+    progress_msg = update.message.reply_text(
+        f'Asking GFPGAN to upscale that image (1/{times})…',
+        quote=False
+    )
+
     try:
         filename = context.bot.get_file(photo.file_id).\
             download(custom_path=get_random_string(12) + '.jpg')
@@ -45,11 +50,6 @@ def command_gfpgan(update: Update, context: CallbackContext) -> None:
     with Image(blob=image) as image:
         image.transform(resize='1280x1280^')
         image = image.make_blob(format='png')
-
-    progress_msg = update.message.reply_text(
-        f'Asking GFPGAN to upscale that image (1/{times})…',
-        quote=False
-    )
 
     s = requests.Session()
 
