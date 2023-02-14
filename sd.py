@@ -24,18 +24,13 @@ class SD:
             # get session cookies first. we need them to download the images later
             self.hash = get_random_string(11)
 
-            ws = websocket.WebSocketApp('wss://stabilityai-stable-diffusion.hf.space/queue/join',
-                                        on_open=self.on_open, on_message=self.on_message)
+            ws = websocket.WebSocketApp('wss://stabilityai-stable-diffusion.hf.space/queue/join', on_message=self.on_message)
             ws.run_forever(origin='https://hf.space', sockopt=((socket.IPPROTO_TCP, socket.TCP_NODELAY, 1),))
 
             if self.results == 'queue_full':
                 self.edits.append_edit(self.progress_msg, ('Stable Diffusion: queue is full, this is going to take a while.'))
             else:
                 return self.results if self.results else None
-
-    @staticmethod
-    def on_open():
-        logger.info('sd socket open')
 
     def on_message(self, ws, message):
         message = json.loads(message)
@@ -56,7 +51,10 @@ class SD:
             self.edits.append_edit(self.progress_msg, ('Stable Diffusion: generating…'))
         elif message['msg'] == 'process_completed':
             logger.info('sd says its done')
-            self.results = [b64decode(x.replace('data:image/jpeg;base64,', '')) for x in message['output']['data'][0]]
+            try:
+                self.results = [b64decode(x.replace('data:image/jpeg;base64,', '')) for x in message['output']['data'][0]]
+            except KeyError:
+                self.results = None
             ws.close()
         elif message['msg'] == 'queue_full':
             logger.info('sd says queue is full')
