@@ -217,7 +217,8 @@ def command_config(update: Update, context: CallbackContext) -> None:
         is_admin_chat = update.message.chat.id in _config_list('admins', int)
         is_secret = lambda k: k in (
             'token chat_relays chat_relay_delete_channel banned_users '
-            '4chan_cron_chat_id muted_groups encrypt_password encrypt_salt'
+            '4chan_cron_chat_id muted_groups encrypt_password encrypt_salt '
+            'ipgeolocation_io_api_key'
         ).split(' ')
         should_show = lambda k: not is_secret(k) or (is_secret(k) and is_admin_chat)
         return '<strong>%s = </strong>%s' % (
