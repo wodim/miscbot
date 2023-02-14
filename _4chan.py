@@ -1,4 +1,5 @@
 import datetime
+import json
 import os
 import random
 import re
@@ -20,7 +21,8 @@ class _4chan:
     THREAD_URL = 'https://boards.4chan.org/%s/thread/%d'
 
     def __init__(self):
-        self.rx_thread_ids = re.compile(r'[{\,]"(\d+)\":{')
+        self.rx_catalog = re.compile(r'var catalog = (.*);var style_group = "')
+        self.rx_general = re.compile(r'\/[a-z]*\/', re.I)
 
     @staticmethod
     def _download_file(url, name):
@@ -107,9 +109,21 @@ class _4chan:
         r = requests.get(self.CATALOG_URL % board)
         if r.status_code != requests.codes.ok:
             raise RuntimeError("couldn't request the board catalog: %d" % r.status_code)
-        threads_ids = [int(x) for x in self.rx_thread_ids.findall(r.text)]
-        logger.info('done retrieving /%s/', board)
-        return threads_ids
+        # extract threads from the catalog in json format
+        rx_match = self.rx_catalog.search(r.text)
+        if not rx_match:
+            raise RuntimeError("couldn't parse catalog")
+        # filter undesirable threads (general threads, threads that point somewhere else...)
+        threads = [(int(x), y) for x, y in json.loads(rx_match.group(1))['threads'].items()
+                   if '&gt;&gt;' not in y['teaser'] and len(y['teaser']) < 1000 and
+                   (not y['sub'] or (y['sub'] and
+                                     'general' not in y['sub'].lower() and
+                                     'thread' not in y['sub'].lower() and
+                                     not self.rx_general.search(y['sub'])))]
+        # sort list of threads by number of replies and extract top fifth
+        sorted_threads = sorted(threads, key=lambda x: x[1]['r'], reverse=True)[:len(threads) // 5]
+        logger.info('done retrieving /%s/, %d threads matched', board, len(sorted_threads))
+        return [x for x, _ in sorted_threads]
 
 
 def cron_4chan(context: CallbackContext) -> None:
