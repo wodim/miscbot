@@ -67,8 +67,15 @@ def command_translate(update: Update, context: CallbackContext) -> None:
         update.message.reply_text(f'Invalid source language "{lang_from}" provided.')
         return
     if lang_to not in all_languages:
-        update.message.reply_text(f'Invalid target language "{lang_to}" provided.')
-        return
+        if lang_from == 'auto':
+            # if only the target language was specified, pretend the user wants to translate
+            # a string that begins with a two-lettered word
+            text = f'{lang_to} {text}'
+            lang_from, lang_to = 'auto', _config('translate_default_language')
+        else:
+            # but if two languages were specified, this is a conscious mistake
+            update.message.reply_text(f'Invalid target language "{lang_to}" provided.')
+            return
 
     if not text or not text.strip():
         update.message.reply_text((TRANSLATE_USAGE % _config('translate_default_language')
