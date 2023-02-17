@@ -21,7 +21,6 @@ admins = 123123123
 error_animation = CgACAgQAAxkBAAJmjmHYLeMwbHUxlUFKrtrYNZibph2yAAJ1AgACG2CVUljvmKgkpICWIwQ
 ; file id for the gif that is sent when the bot is brought back to life
 restart_animation = CgACAgQAAxkBAAJnXWHaBNqU2EELROLed0alvigmKjLCAALiCgAC84HQUm-vp5donIGiIwQ
-stats_url = http://2.vortigaunt.net/CHAT_ID.html
 ; how many times a translation will be attempted before giving up
 translate_retries = 1000
 ; these are used by the translate module: how many times a single request is retried,

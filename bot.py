@@ -102,14 +102,6 @@ def command_unhandled(update: Update, _: CallbackContext) -> None:
     update.message.reply_animation(_config('error_animation'))
 
 
-def command_stats(update: Update, _: CallbackContext) -> None:
-    """returns the stats url for this chat"""
-    if update.message.chat.type in ('group', 'supergroup'):
-        update.message.reply_text(_config('stats_url').replace('CHAT_ID', str(update.message.chat_id)))
-    else:
-        update.message.reply_text('This is not a group.')
-
-
 def command_info(update: Update, _: CallbackContext) -> None:
     """returns info about the quoted message"""
     if update.message.reply_to_message:
@@ -413,7 +405,6 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('oiga', command_oiga), group=40)
     # this one needs to be async because we call an external program and we wait for it to die.
     dispatcher.add_handler(CommandHandler('calc', command_calc, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler('stats', command_stats), group=40)
     dispatcher.add_handler(CommandHandler('normalize', command_normalize), group=40)
     dispatcher.add_handler(CommandHandler('restart', command_restart), group=40)
     dispatcher.add_handler(CommandHandler('debug', command_debug), group=40)
@@ -485,7 +476,6 @@ if __name__ == '__main__':
         ('scramble',     '🎲'),
         ('distort',      '🔨'),
         ('oiga',         '❗️'),
-        ('stats',        '📊'),
         ('thread',       '🍀'),
         ('calc',         '🧮'),
         ('craiyon',      '🎨'),
