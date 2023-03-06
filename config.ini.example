@@ -32,10 +32,6 @@ translate_http_timeout = 3
 distort_max_concurrent = 3
 4chan_boards = r9k wsg g v
 4chan_cron_chat_id = -123123123123
-; this language is using for stemming and stopword detection
-chatbot_language = spanish
-; percent of messages the chatbot will reply to even when not mentioned
-chatbot_random_chance = 2.5
 ; these users will be ignored in public and private
 banned_users = 123123123
 ; the bot will ignore all commands in these groups, but logs will keep being stored

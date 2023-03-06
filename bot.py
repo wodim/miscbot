@@ -9,8 +9,6 @@ import signal
 import socket
 import threading
 
-from nltk.corpus import stopwords
-from nltk.stem import SnowballStemmer
 import requests
 from telegram import Bot, Update
 from telegram.constants import MAX_MESSAGE_LENGTH, PARSEMODE_HTML
@@ -20,7 +18,6 @@ from telegram.utils.request import Request
 
 from _4chan import cron_4chan, command_thread
 from calc import command_calc
-from chatbot import command_chatbot
 from craiyon import command_craiyon
 from distort import (command_desticker, command_distort, command_distort_caption,
                      command_invert, command_voice)
@@ -37,29 +34,18 @@ from text import command_fortune, command_tip, command_oiga
 from translate import command_scramble, command_translate
 from utils import (_config, _config_list, capitalize, clean_up, ellipsis,
                    get_command_args, get_random_line, get_relays, logger, is_admin,
-                   remove_punctuation, send_admin_message)
+                   send_admin_message)
 
 
 def command_log(update: Update, context: CallbackContext) -> None:
-    """logs a pickled representation of every update message to a file.
-    then a stemmed version of every text message to another file."""
+    """logs a pickled representation of every update message to a file."""
     with context.bot_data['log_semaphore']:
         with open('log.pickle', 'ab') as fp:
             pickle.dump(update.to_dict(), fp)
             try:
                 fp.write(b'\xff\x00__SENTINEL__\x00\xff')
-            except OSError as exc:
-                send_admin_message(context.bot, str(exc))
-        if hasattr(update.message, 'text') and update.message.text:
-            with open(f'chat{update.message.chat.id}.txt', 'at', encoding='utf8') as fp:
-                result = []
-                for token in remove_punctuation(update.message.text.replace('\n', ' ').lower()).split(' '):
-                    stemmed = context.bot_data['stemmer'].stem(token)
-                    if stemmed not in context.bot_data['stopwords']:
-                        result.append(stemmed)
-                result = ' '.join([x for x in result if len(x) > 1])
-                if len(result) > 0:
-                    print(result + '\t' + update.message.text.replace('\n', ' '), file=fp)
+            except Exception as exc:
+                send_admin_message(context.bot, f'Error appending to pickled log: {str(exc)}')
 
 
 def command_normalize(update: Update, _: CallbackContext) -> None:
@@ -370,12 +356,6 @@ if __name__ == '__main__':
         'me': bot.get_me(),
         'log_semaphore': threading.Semaphore(),
     })
-    logger.info('Instantiating stemmer...')
-    dispatcher.bot_data['stemmer'] = SnowballStemmer(_config('chatbot_language'))
-    logger.info('Stemming stopwords...')
-    dispatcher.bot_data['stopwords'] = {
-        dispatcher.bot_data['stemmer'].stem(x) for x in stopwords.words(_config('chatbot_language'))
-    }
 
     logger.info('Adding handlers...')
 
@@ -449,10 +429,6 @@ if __name__ == '__main__':
                                           ~Filters.command & Filters.chat_type.private,
                                           command_distort, run_async=True), group=40)
     dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_unhandled, run_async=True), group=40)
-
-    dispatcher.add_handler(MessageHandler(Filters.chat(sources) & (Filters.text & ~Filters.command & Filters.update.message &
-                                                                   Filters.chat_type.groups),
-                                          command_chatbot, run_async=True), group=50)
 
     # dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.update.message & Filters.chat_type.groups,
     #                                       command_haiku, run_async=True), group=60)
