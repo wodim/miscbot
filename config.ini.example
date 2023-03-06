@@ -64,3 +64,5 @@ actions_cron_interval = 5
 edits_cron_interval = 5
 ; sign up for free at https://api.ipgeolocation.io/i
 ipgeolocation_io_api_key =
+; the image that will be sent when there's an error sending a soyjak
+soyjak_error_photo_url = "https://booru.soy/_images/0b88e33e7dd98cf46d0777de7ceb183a/32876%20-%20SoyBooru.png"

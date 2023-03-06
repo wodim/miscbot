@@ -32,6 +32,7 @@ from relay import (command_relay_chat_photo, command_relay_text, command_relay_p
                    cron_delete)
 from sd import command_sd
 from sound import command_sound, command_sound_list
+from soyjak import command_soyjak, cron_soyjak
 from text import command_fortune, command_tip, command_oiga
 from translate import command_scramble, command_translate
 from utils import (_config, _config_list, capitalize, clean_up, ellipsis,
@@ -188,7 +189,8 @@ def command_send(update: Update, context: CallbackContext) -> None:
 def command_clear(update: Update, _: CallbackContext) -> None:
     """clears all temporary files"""
     if files := (glob('*.jpg') + glob('*.webm') + glob('*.tgs') + glob('*.webp') +
-                 glob('translate_tmp_*.txt') + glob('*.mp4') + glob('*.ogg') + glob('*.png')):
+                 glob('translate_tmp_*.txt') + glob('*.mp4') + glob('*.ogg') + glob('*.png') +
+                 glob('downloader_*.tmp')):
         for file in files:
             os.remove(file)
         all_files = ' '.join(files)
@@ -433,6 +435,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('ai', command_sd, run_async=True), group=41)
     dispatcher.add_handler(CommandHandler('gfpgan', command_gfpgan, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('ip', command_ip, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('soyjak', command_soyjak, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler([x.replace('sound/', '') for x in glob('sound/*')], command_sound, run_async=True), group=40)
     # CommandHandlers don't work on captions, so all photos with a caption are sent to a
     # fun that will check for the command and then run command_distort if necessary
@@ -466,6 +469,7 @@ if __name__ == '__main__':
     first_cron = datetime.datetime.now().astimezone() + datetime.timedelta(hours=1)
     first_cron = first_cron.replace(minute=0, second=0, microsecond=0)
     dispatcher.job_queue.run_repeating(cron_4chan, first=first_cron, interval=60 * 60)
+    # dispatcher.job_queue.run_repeating(cron_soyjak, first=first_cron, interval=60 * 60)
 
     logger.info('Setting commands...')
 
@@ -481,6 +485,7 @@ if __name__ == '__main__':
         ('craiyon',      '🎨'),
         ('sd',           '🖼️'),
         ('gfpgan',       '📈'),
+        ('soyjak',       '🥛'),
     ])
 
     logger.info('Booting poller...')

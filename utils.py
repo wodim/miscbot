@@ -1,11 +1,14 @@
 import configparser
 import logging
+import os
 import random
 import re
 import string
 import unicodedata
 
+from bs4 import BeautifulSoup
 import emoji
+import requests
 
 
 logging.getLogger('apscheduler').setLevel(logging.WARNING)
@@ -109,7 +112,7 @@ def remove_punctuation(s):
 def clean_up(text):
     text = text.replace('\u200d', '').replace('\ufe0f', '')
     text = ''.join([' ' + emoji_name(x) + ' '
-                    if x in emoji.UNICODE_EMOJI['en'] else x
+                    if x in emoji.EMOJI_DATA.keys() else x
                     for x in text])
     text = capitalize(text.strip())
     while '  ' in text:
@@ -158,5 +161,36 @@ def capitalize(text):
             upper = True
     return output
 
+
 def clamp(n, floor, ceil):
     return max(floor, min(n, ceil))
+
+
+s = requests.Session()
+# TODO ua, etc
+def get_url(url):
+    logger.info('downloading %s', url)
+    return s.get(url).content
+
+
+def get_html_element(html, element):
+    soup = BeautifulSoup(html, 'lxml')
+    return soup.select_one(element)
+
+
+class Downloader:
+    def __init__(self, url):
+        self.filename = f'downloader_{get_random_string(12)}.tmp'
+        self.url = url
+
+    def __enter__(self):
+        self.fp = open(self.filename, 'w+b')
+        logger.info('downloading %s into %s', self.url, self.filename)
+        self.fp.write(get_url(self.url))
+        self.fp.seek(0)
+        return self.fp
+
+    def __exit__(self, *_):
+        logger.info('closing and deleting %s', self.filename)
+        self.fp.close()
+        os.remove(self.filename)
