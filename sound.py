@@ -46,7 +46,7 @@ def command_sound(update: Update, context: CallbackContext) -> str:
             all_files = glob(f'{folder}*')
             input_files.append(random.choice(all_files))
         else:
-            if not all(x in string.ascii_letters + string.digits or x == '_' for x in file):
+            if not all(x in string.ascii_letters + string.digits or x in ('_', '!') for x in file):
                 update.message.reply_text(f'Nice try: {file}')
                 return
             fullpath = glob(f'{folder}{file}.*')
