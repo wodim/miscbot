@@ -24,7 +24,6 @@ def command_craiyon(update: Update, _: CallbackContext) -> None:
         quote=False
     )
 
-    prompt = ' '.join([prompt] * 5)
     for _ in count():
         r = requests.post('https://api.craiyon.com/draw', json={
             'prompt': prompt,
