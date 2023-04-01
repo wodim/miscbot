@@ -344,6 +344,7 @@ def command_gfpgan(update: Update, context: CallbackContext) -> None:
         'out_format': HuggingFaceFormat.PHOTO,
         'hash_on_open': True,
         'fn_index': 1,
+        'multiple': True,
     })
 
 
@@ -376,6 +377,7 @@ def command_anime(update: Update, context: CallbackContext) -> None:
         'in_format': [HuggingFaceFormat.PHOTO, 'version 2 (🔺 robustness,🔻 stylization)'],
         'out_format': HuggingFaceFormat.PHOTO,
         'method': 'push',
+        'multiple': True,
     })
 
 

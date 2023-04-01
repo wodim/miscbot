@@ -31,16 +31,25 @@ class HuggingFaceWS:
         self.hash = None
 
     def run(self):
-        while True:
-            self.hash = get_random_string(11)
-            ws = websocket.WebSocketApp(f'wss://{self.data["space"]}.hf.space/queue/join',
-                                        on_message=self.on_message, on_open=self.on_open, on_close=self.on_close)
-            ws.run_forever(origin=f'https://{self.data["space"]}.hf.space', sockopt=((socket.IPPROTO_TCP, socket.TCP_NODELAY, 1),))
+        for _ in range(self.data['times']):
+            while True:
+                self.hash = get_random_string(11)
+                ws = websocket.WebSocketApp(f'wss://{self.data["space"]}.hf.space/queue/join',
+                                            on_message=self.on_message, on_open=self.on_open, on_close=self.on_close)
+                ws.run_forever(origin=f'https://{self.data["space"]}.hf.space', sockopt=((socket.IPPROTO_TCP, socket.TCP_NODELAY, 1),))
 
-            if self.results == 'queue_full' and self.progress_msg:
-                self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: queue is full, this is going to take a while.'))
-            else:
-                return self.results if self.results else None
+                if self.results == 'queue_full' and self.progress_msg:
+                    self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: queue is full, this is going to take a while.'))
+                else:
+                    break
+
+            if self.data['times'] > 1:
+                # refeed
+                for k, v in enumerate(self.data['in_format']):
+                    if isinstance(v, str) and v.startswith('data:'):
+                        self.data['in_format'][k] = self.results
+
+        return self.results
 
     def on_open(self, ws):
         logger.info('%s: connected', self.data['name'])
@@ -76,12 +85,7 @@ class HuggingFaceWS:
         elif message['msg'] == 'process_completed':
             logger.info('%s says its done', self.data['name'])
             try:
-                if self.data['out_format'] == HuggingFaceFormat.PHOTO:
-                    self.results = b64decode(message['output']['data'][0].replace('data:image/png;base64,', ''))
-                elif self.data['out_format'] == [HuggingFaceFormat.PHOTO]:
-                    self.results = [b64decode(x.replace('data:image/jpeg;base64,', '')) for x in message['output']['data'][0]]
-                elif self.data['out_format'] == HuggingFaceFormat.TEXT:
-                    self.results = message['output']['data'][0]
+                self.results = message['output']['data'][0]
             except KeyError:
                 self.results = None
             ws.close()
@@ -105,35 +109,49 @@ class HuggingFacePush:
         self.hash = None
 
     def run(self):
-        self.hash = get_random_string(11)
-        r = requests_session.post(f'https://{self.data["space"]}.hf.space/api/queue/push/', json={
-            'fn_index': self.data['fn_index'],
-            'data': self.data['in_format'],
-            'action': 'predict',
-            'session_hash': self.hash,
-        }).json()
-        hash_ = r['hash']
-
-        while True:
-            r = requests_session.post(f'https://{self.data["space"]}.hf.space/api/queue/status/', json={
-                'hash': hash_,
+        for _ in range(self.data['times']):
+            self.hash = get_random_string(11)
+            logger.info('%s: getting hash', self.data['name'])
+            r = requests_session.post(f'https://{self.data["space"]}.hf.space/api/queue/push/', json={
+                'fn_index': self.data['fn_index'],
+                'data': self.data['in_format'],
+                'action': 'predict',
+                'session_hash': self.hash,
             }).json()
+            hash_ = r['hash']
 
-            if r['status'] == 'COMPLETE':
-                if self.data['out_format'] == HuggingFaceFormat.PHOTO:
-                    self.results = b64decode(r['data']['data'][0].replace('data:image/png;base64,', ''))
-                    break
+            while True:
+                logger.info('%s: asking for status', self.data['name'])
+                r = requests_session.post(f'https://{self.data["space"]}.hf.space/api/queue/status/', json={
+                    'hash': hash_,
+                }).json()
+
+                if r['status'] == 'COMPLETE':
+                    logger.info('%s: complete', self.data['name'])
+                    if self.data['out_format'] == HuggingFaceFormat.PHOTO:
+                        self.results = r['data']['data'][0]
+                        break
+                    else:
+                        # TODO more formats
+                        return
+                elif r['status'] == 'PENDING':
+                    logger.info('%s: pending', self.data['name'])
+                    self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: pending…'))
+                elif r['status'] == 'QUEUED':
+                    logger.info('%s: in queue', self.data['name'])
+                    self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: queued…'))
                 else:
-                    # TODO more formats
-                    return
-            elif r['status'] == 'PENDING':
-                self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: pending…'))
-            elif r['status'] == 'QUEUED':
-                self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: queued…'))
+                    logger.info('%s: unknown status "%s"', self.data['name'], r['status'])
 
-            time.sleep(.5)
+                time.sleep(.5)
 
-        return self.results if self.results else None
+            if self.data['times'] > 1:
+                # refeed
+                for k, v in enumerate(self.data['in_format']):
+                    if isinstance(v, str) and v.startswith('data:'):
+                        self.data['in_format'][k] = self.results
+
+        return self.results
 
 
 def huggingface(update: Update, context: CallbackContext, data) -> None:
@@ -142,11 +160,25 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
     for k, v in enumerate(data['in_format']):
         if v == HuggingFaceFormat.PHOTO:
             photo = download_attachment(update, context, AttachmentType.PHOTO)
+            if not photo:
+                update.message.reply_text('This command requires a photo. Post or quote one.')
+                return
             with open(photo, 'rb') as fp:
                 data['in_format'][k] = 'data:image/jpeg;base64,' + b64encode(fp.read()).decode('utf-8')
             os.remove(photo)
         elif v == HuggingFaceFormat.TEXT:
             data['in_format'][k] = get_command_args(update, use_quote=True)
+            if not data['in_format'][k]:
+                update.message.reply_text('This command requires text. Post or quote some.')
+                return
+
+    if data.get('multiple'):
+        try:
+            data['times'] = int(get_command_args(update))
+            if data['times'] < 1 or data['times'] > 100:
+                data['times'] = 1
+        except TypeError:
+            data['times'] = 1
 
     progress_msg = update.message.reply_text(
         f'{data["name"]}: connecting…',
@@ -155,6 +187,15 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
 
     cls = HuggingFacePush if data.get('method') == 'push' else HuggingFaceWS
     result = cls(context.bot_data['edits'], progress_msg, data).run()
+
+    if data['out_format'] == HuggingFaceFormat.PHOTO:
+        result = b64decode(result.replace('data:image/png;base64,', ''))
+    elif data['out_format'] == [HuggingFaceFormat.PHOTO]:
+        result = b64decode([x.replace('data:image/jpeg;base64,', '') for x in result])
+    elif data['out_format'] == HuggingFaceFormat.TEXT:
+        pass
+    else:
+        raise ValueError(f'unknown output format for {data["name"]}')
 
     if result:
         if data['out_format'] == HuggingFaceFormat.PHOTO:
