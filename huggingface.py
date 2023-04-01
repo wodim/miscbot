@@ -121,7 +121,6 @@ class HuggingFacePush:
             hash_ = r['hash']
 
             while True:
-                logger.info('%s: asking for status', self.data['name'])
                 r = requests_session.post(f'https://{self.data["space"]}.hf.space/api/queue/status/', json={
                     'hash': hash_,
                 }).json()
@@ -129,6 +128,9 @@ class HuggingFacePush:
                 if r['status'] == 'COMPLETE':
                     logger.info('%s: complete', self.data['name'])
                     if self.data['out_format'] == HuggingFaceFormat.PHOTO:
+                        self.results = r['data']['data'][0]
+                        break
+                    elif self.data['out_format'] == HuggingFaceFormat.TEXT:
                         self.results = r['data']['data'][0]
                         break
                     else:
@@ -172,13 +174,14 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
                 update.message.reply_text('This command requires text. Post or quote some.')
                 return
 
+    data['times'] = 1
     if data.get('multiple'):
         try:
             data['times'] = int(get_command_args(update))
             if data['times'] < 1 or data['times'] > 100:
                 data['times'] = 1
         except TypeError:
-            data['times'] = 1
+            pass
 
     progress_msg = update.message.reply_text(
         f'{data["name"]}: connecting…',
@@ -191,7 +194,7 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
     if data['out_format'] == HuggingFaceFormat.PHOTO:
         result = b64decode(result.replace('data:image/png;base64,', ''))
     elif data['out_format'] == [HuggingFaceFormat.PHOTO]:
-        result = b64decode([x.replace('data:image/jpeg;base64,', '') for x in result])
+        result = [b64decode(x.replace('data:image/jpeg;base64,', '')) for x in result]
     elif data['out_format'] == HuggingFaceFormat.TEXT:
         pass
     else:

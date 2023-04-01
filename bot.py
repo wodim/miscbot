@@ -352,9 +352,10 @@ def command_caption(update: Update, context: CallbackContext) -> None:
     """takes an image and tells you what it is"""
     huggingface(update, context, {
         'name': 'Caption',
-        'space': 'fariyan-image-to-text',
+        'space': 'srddev-image-caption',
         'in_format': [HuggingFaceFormat.PHOTO],
         'out_format': HuggingFaceFormat.TEXT,
+        'method': 'push',
     })
 
 
