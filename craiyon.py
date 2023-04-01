@@ -8,7 +8,7 @@ from telegram import Update
 from telegram.ext import CallbackContext
 from wand.image import Image
 
-from utils import logger, get_command_args, get_url, repeat_words
+from utils import logger, get_command_args, get_url
 
 
 CRAIYON_SIZE = 1024
