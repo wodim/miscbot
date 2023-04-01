@@ -492,7 +492,7 @@ if __name__ == '__main__':
 
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
-    dispatcher.job_queue.run_repeating(cron_twitter, interval=60, first=1)
+    dispatcher.job_queue.run_repeating(cron_twitter, interval=10, first=1)
 
     if actions_cron_interval > 0:
         dispatcher.job_queue.run_repeating(actions.cron, interval=actions_cron_interval, name='actions').enabled = False
