@@ -19,6 +19,9 @@ def get_soyjak() -> str:
 
 
 def cron_soyjak(context: CallbackContext) -> None:
+    if not _config('4chan_cron_chat_id'):
+        return
+
     hour = datetime.datetime.now().astimezone().hour
     if hour % 2 == 0 or 2 < hour < 10:
         return

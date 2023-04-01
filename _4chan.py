@@ -127,6 +127,8 @@ class _4chan:
 
 
 def cron_4chan(context: CallbackContext) -> None:
+    if not _config('4chan_cron_chat_id'):
+        return
     hour = datetime.datetime.now().astimezone().hour
     if hour % 2 == 1 or 2 < hour < 10:
         return

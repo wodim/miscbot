@@ -1,0 +1,185 @@
+from base64 import b64decode, b64encode
+from enum import Enum
+import json
+from math import ceil, floor
+import os
+import socket
+import time
+
+from telegram import Update
+from telegram.ext import CallbackContext
+from wand.image import Image
+import websocket
+
+from utils import AttachmentType, download_attachment, get_command_args, get_random_string, logger, requests_session
+
+
+class HuggingFaceFormat(Enum):
+    TEXT = 1
+    PHOTO = 2
+    VIDEO = 3
+    ANIMATION = 4
+
+
+class HuggingFaceWS:
+    def __init__(self, edits, progress_msg, data):
+        self.edits = edits
+        self.progress_msg = progress_msg
+        self.data = data
+        self.data['fn_index'] = self.data.get('fn_index') or 0
+        self.results = None
+        self.hash = None
+
+    def run(self):
+        while True:
+            self.hash = get_random_string(11)
+            ws = websocket.WebSocketApp(f'wss://{self.data["space"]}.hf.space/queue/join',
+                                        on_message=self.on_message, on_open=self.on_open, on_close=self.on_close)
+            ws.run_forever(origin=f'https://{self.data["space"]}.hf.space', sockopt=((socket.IPPROTO_TCP, socket.TCP_NODELAY, 1),))
+
+            if self.results == 'queue_full' and self.progress_msg:
+                self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: queue is full, this is going to take a while.'))
+            else:
+                return self.results if self.results else None
+
+    def on_open(self, ws):
+        logger.info('%s: connected', self.data['name'])
+        if self.data.get('hash_on_open'):
+            logger.info('%s: sending on_open hash', self.data['name'])
+            ws.send(json.dumps({'hash': self.hash}))
+
+    def on_close(self, *_):
+        logger.info('%s: socket closed', self.data['name'])
+
+    def on_message(self, ws, message):
+        message = json.loads(message)
+        if message['msg'] == 'send_data':
+            logger.info('%s asked for data', self.data['name'])
+            ws.send(json.dumps({
+                'fn_index': self.data['fn_index'],
+                'data': self.data['in_format'],
+                'session_hash': self.hash
+            }))
+        elif message['msg'] == 'estimation':
+            if message.get('rank') and message.get('rank_eta'):
+                logger.info('%s says we are at rank %d with %d seconds left', self.data['name'], message['rank'], message['rank_eta'])
+                time_left = f'{ceil(message["rank_eta"] / 60)} minutes' if message['rank_eta'] > 60 else f'{ceil(message["rank_eta"])} seconds'
+                if self.progress_msg:
+                    self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: in queue, {time_left} left…'))
+            else:
+                if self.progress_msg:
+                    self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: in queue…'))
+        elif message['msg'] == 'process_starts':
+            logger.info('%s says it has started to process the prompt', self.data['name'])
+            if self.progress_msg:
+                self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: generating…'))
+        elif message['msg'] == 'process_completed':
+            logger.info('%s says its done', self.data['name'])
+            try:
+                if self.data['out_format'] == HuggingFaceFormat.PHOTO:
+                    self.results = b64decode(message['output']['data'][0].replace('data:image/png;base64,', ''))
+                elif self.data['out_format'] == [HuggingFaceFormat.PHOTO]:
+                    self.results = [b64decode(x.replace('data:image/jpeg;base64,', '')) for x in message['output']['data'][0]]
+                elif self.data['out_format'] == HuggingFaceFormat.TEXT:
+                    self.results = message['output']['data'][0]
+            except KeyError:
+                self.results = None
+            ws.close()
+        elif message['msg'] == 'queue_full':
+            logger.info('%s says queue is full', self.data['name'])
+            self.results = message['msg']
+            ws.close()
+        elif message['msg'] == 'send_hash':
+            ws.send(json.dumps({'fn_index': self.data['fn_index'], 'session_hash': self.hash}))
+        else:
+            logger.info('unhandled message %s', message)
+
+
+class HuggingFacePush:
+    def __init__(self, edits, progress_msg, data):
+        self.edits = edits
+        self.progress_msg = progress_msg
+        self.data = data
+        self.data['fn_index'] = self.data.get('fn_index') or 0
+        self.results = None
+        self.hash = None
+
+    def run(self):
+        self.hash = get_random_string(11)
+        r = requests_session.post(f'https://{self.data["space"]}.hf.space/api/queue/push/', json={
+            'fn_index': self.data['fn_index'],
+            'data': self.data['in_format'],
+            'action': 'predict',
+            'session_hash': self.hash,
+        }).json()
+        hash_ = r['hash']
+
+        while True:
+            r = requests_session.post(f'https://{self.data["space"]}.hf.space/api/queue/status/', json={
+                'hash': hash_,
+            }).json()
+
+            if r['status'] == 'COMPLETE':
+                if self.data['out_format'] == HuggingFaceFormat.PHOTO:
+                    self.results = b64decode(r['data']['data'][0].replace('data:image/png;base64,', ''))
+                    break
+                else:
+                    # TODO more formats
+                    return
+            elif r['status'] == 'PENDING':
+                self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: pending…'))
+            elif r['status'] == 'QUEUED':
+                self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: queued…'))
+
+            time.sleep(.5)
+
+        return self.results if self.results else None
+
+
+def huggingface(update: Update, context: CallbackContext, data) -> None:
+    """huggingface generic implementation"""
+    # first, we have to check if we have what we need as specified by the format
+    for k, v in enumerate(data['in_format']):
+        if v == HuggingFaceFormat.PHOTO:
+            photo = download_attachment(update, context, AttachmentType.PHOTO)
+            with open(photo, 'rb') as fp:
+                data['in_format'][k] = 'data:image/jpeg;base64,' + b64encode(fp.read()).decode('utf-8')
+            os.remove(photo)
+        elif v == HuggingFaceFormat.TEXT:
+            data['in_format'][k] = get_command_args(update, use_quote=True)
+
+    progress_msg = update.message.reply_text(
+        f'{data["name"]}: connecting…',
+        quote=False
+    )
+
+    cls = HuggingFacePush if data.get('method') == 'push' else HuggingFaceWS
+    result = cls(context.bot_data['edits'], progress_msg, data).run()
+
+    if result:
+        if data['out_format'] == HuggingFaceFormat.PHOTO:
+            with Image(blob=result) as image:
+                if image.width > 1280 or image.height > 1280:
+                    image.transform(resize=f'{1280}x{1280}>')
+                    update.message.reply_photo(image.make_blob(format='jpeg'))
+                else:
+                    update.message.reply_photo(result)
+        elif data['out_format'] == [HuggingFaceFormat.PHOTO]:
+            # TODO: dehardcode
+            SD_SIZE = 768
+            SD_SIDE = 2
+            with Image(width=SD_SIZE * SD_SIDE, height=SD_SIZE * SD_SIDE) as canvas:
+                for i, image_blob in enumerate(result):
+                    with Image(blob=image_blob) as image:
+                        image.transform(resize=f'{SD_SIZE}x{SD_SIZE}>')
+                        left = (i % SD_SIDE + 1) * SD_SIZE - SD_SIZE
+                        top = floor(i / SD_SIDE) * SD_SIZE
+                        canvas.composite(image, left=left, top=top)
+                update.message.reply_photo(canvas.make_blob(format='jpeg'))
+        elif data['out_format'] == HuggingFaceFormat.TEXT:
+            update.message.reply_text(result)
+        progress_msg.delete()
+    else:
+        progress_msg.edit_text(f'{data["name"]}: failed.')
+
+    context.bot_data['edits'].flush_edits(progress_msg)

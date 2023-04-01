@@ -22,16 +22,16 @@ from craiyon import command_craiyon
 from distort import (command_desticker, command_distort, command_distort_caption,
                      command_invert, command_voice)
 import encrypt
-from gfpgan import command_gfpgan
+from huggingface import HuggingFaceFormat, huggingface
 from message_history import MessageHistory
 from queues import Actions, Edits
 from relay import (command_relay_chat_photo, command_relay_text, command_relay_photo,
                    cron_delete)
-from sd import command_sd
 from sound import command_sound, command_sound_list
 from soyjak import command_soyjak, cron_soyjak
 from text import command_fortune, command_tip, command_oiga
 from translate import command_scramble, command_translate
+from twitter import cron_twitter
 from utils import (_config, _config_list, capitalize, clean_up, ellipsis,
                    get_command_args, get_random_line, get_relays, logger, is_admin,
                    send_admin_message)
@@ -229,7 +229,10 @@ def command_leave(update: Update, context: CallbackContext) -> None:
     """leaves a chat"""
     if is_admin(update.message.from_user.id):
         if len(context.args) != 1:
-            update.message.reply_text('Usage: /leave <chat id>')
+            help_text = 'Usage: /leave <chat id>'
+            if update.message.chat.type != 'private':
+                help_text += f'\n\nIf you want me to leave this chat, use:\n/leave {update.message.chat.id}'
+            update.message.reply_text(help_text)
             return
         try:
             chat_id = int(context.args[0])
@@ -332,6 +335,50 @@ def command_help(update: Update, _: CallbackContext) -> None:
     update.message.reply_text('\n'.join(commands), parse_mode=PARSEMODE_HTML)
 
 
+def command_gfpgan(update: Update, context: CallbackContext) -> None:
+    """requests an upscaled image from GFPGAN"""
+    huggingface(update, context, {
+        'name': 'GFPGAN',
+        'space': 'vicalloy-gfpgan',
+        'in_format': [HuggingFaceFormat.PHOTO, 'v1.4', '4', 0],
+        'out_format': HuggingFaceFormat.PHOTO,
+        'hash_on_open': True,
+        'fn_index': 1,
+    })
+
+
+def command_caption(update: Update, context: CallbackContext) -> None:
+    """takes an image and tells you what it is"""
+    huggingface(update, context, {
+        'name': 'Caption',
+        'space': 'fariyan-image-to-text',
+        'in_format': [HuggingFaceFormat.PHOTO],
+        'out_format': HuggingFaceFormat.TEXT,
+    })
+
+
+def command_sd(update: Update, context: CallbackContext) -> None:
+    """requests images for a specific prompt from stable diffusion"""
+    huggingface(update, context, {
+        'name': 'Stable Diffusion',
+        'space': 'stabilityai-stable-diffusion',
+        'in_format': [HuggingFaceFormat.TEXT, 'low quality', 9],
+        'out_format': [HuggingFaceFormat.PHOTO],
+        'fn_index': 2,
+    })
+
+
+def command_anime(update: Update, context: CallbackContext) -> None:
+    """turns a photo into an anime drawing using AnimeGANv2"""
+    huggingface(update, context, {
+        'name': 'AnimeGANv2',
+        'space': 'akhaliq-animeganv2',
+        'in_format': [HuggingFaceFormat.PHOTO, 'version 2 (🔺 robustness,🔻 stylization)'],
+        'out_format': HuggingFaceFormat.PHOTO,
+        'method': 'push',
+    })
+
+
 if __name__ == '__main__':
     logger.info('Hello!!!')
     # connection pool size is workers + updater + dispatcher + job queue + main thread
@@ -355,6 +402,7 @@ if __name__ == '__main__':
         'edits': edits,
         'me': bot.get_me(),
         'log_semaphore': threading.Semaphore(),
+        'last_tweet_ids': {},
     })
 
     logger.info('Adding handlers...')
@@ -416,6 +464,10 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('gfpgan', command_gfpgan, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('ip', command_ip, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('soyjak', command_soyjak, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('caption', command_caption, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('anime', command_anime, run_async=True), group=40)
+    dispatcher.add_handler(MessageHandler(Filters.photo & ~Filters.command & Filters.chat_type.groups & Filters.chat(_config_list('auto_captions', int)),
+                                          command_caption, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler([x.replace('sound/', '') for x in glob('sound/*')], command_sound, run_async=True), group=40)
     # CommandHandlers don't work on captions, so all photos with a caption are sent to a
     # fun that will check for the command and then run command_distort if necessary
@@ -437,6 +489,8 @@ if __name__ == '__main__':
 
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
+    dispatcher.job_queue.run_repeating(cron_twitter, interval=60, first=1)
+
     if actions_cron_interval > 0:
         dispatcher.job_queue.run_repeating(actions.cron, interval=actions_cron_interval, name='actions').enabled = False
     if edits_cron_interval > 0:
@@ -445,7 +499,7 @@ if __name__ == '__main__':
     first_cron = datetime.datetime.now().astimezone() + datetime.timedelta(hours=1)
     first_cron = first_cron.replace(minute=0, second=0, microsecond=0)
     dispatcher.job_queue.run_repeating(cron_4chan, first=first_cron, interval=60 * 60)
-    # dispatcher.job_queue.run_repeating(cron_soyjak, first=first_cron, interval=60 * 60)
+    dispatcher.job_queue.run_repeating(cron_soyjak, first=first_cron, interval=60 * 60)
 
     logger.info('Setting commands...')
 
@@ -462,6 +516,8 @@ if __name__ == '__main__':
         ('sd',           '🖼️'),
         ('gfpgan',       '📈'),
         ('soyjak',       '🥛'),
+        ('caption',      '🔤'),
+        ('anime',        '🌸'),
     ])
 
     logger.info('Booting poller...')
@@ -474,7 +530,7 @@ if __name__ == '__main__':
             bot.send_animation(int(fp.read()), _config('restart_animation'))
         os.remove('restart')
     except FileNotFoundError:
-        pass
+        send_admin_message(bot, "I'm back.")
 
     logger.info("We're on!")
 
