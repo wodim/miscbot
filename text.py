@@ -62,3 +62,10 @@ def command_oiga(update: Update, context: CallbackContext) -> None:
     """handles the /oiga command"""
     update.message.reply_text(get_random_line('oiga.txt'),
                               disable_web_page_preview=True, quote=False)
+
+
+def command_haiku(update: Update, _: CallbackContext) -> None:
+    """sends a haiku"""
+    update.message.reply_text(get_random_line('haiku5.txt') +
+                              get_random_line('haiku7.txt') +
+                              get_random_line('haiku5.txt'), quote=False)

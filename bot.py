@@ -3,11 +3,9 @@ from glob import glob
 import html
 from inspect import getdoc
 import os
-import pickle
 import pprint
 import signal
 import socket
-import threading
 
 import requests
 from telegram import Bot, Update
@@ -21,7 +19,6 @@ from calc import command_calc
 from craiyon import command_craiyon
 from distort import (command_photo, command_distort, command_distort_caption,
                      command_invert, command_voice)
-import encrypt
 from huggingface import HuggingFaceFormat, huggingface
 from message_history import MessageHistory
 from queues import Actions, Edits
@@ -29,23 +26,12 @@ from relay import (command_relay_chat_photo, command_relay_text, command_relay_p
                    cron_delete)
 from sound import command_sound, command_sound_list
 from soyjak import command_soyjak, cron_soyjak
-from text import command_fortune, command_tip, command_oiga
+from text import command_fortune, command_haiku, command_tip, command_oiga
 from translate import command_translate
 from twitter import cron_twitter
-from utils import (_config, _config_list, capitalize, clean_up, ellipsis,
-                   get_command_args, get_random_line, get_relays, logger, is_admin,
+from utils import (_config, _config_list, clean_up, ellipsis,
+                   get_command_args, get_relays, logger, is_admin,
                    send_admin_message)
-
-
-def command_log(update: Update, context: CallbackContext) -> None:
-    """logs a pickled representation of every update message to a file."""
-    with context.bot_data['log_semaphore']:
-        with open('log.pickle', 'ab') as fp:
-            pickle.dump(update.to_dict(), fp)
-            try:
-                fp.write(b'\xff\x00__SENTINEL__\x00\xff')
-            except Exception as exc:
-                send_admin_message(context.bot, f'Error appending to pickled log: {str(exc)}')
 
 
 def command_normalize(update: Update, _: CallbackContext) -> None:
@@ -140,22 +126,6 @@ def command_trigger(update: Update, _: CallbackContext) -> None:
             raise DispatcherHandlerStop()
 
 
-def command_haiku_reply(update: Update, _: CallbackContext) -> None:
-    """detects haikus sent by group members and formats them"""
-    if not update.message or not update.message.text:
-        return
-    text = update.message.text
-    while '  ' in text:
-        text = text.replace('  ', ' ')
-    if text.count(' ') != 16:
-        return
-    parts = capitalize(text).split(' ')
-    text = ' '.join(parts[:5]) + '\n' + ' '.join(parts[5:12]) + '\n' + ' '.join(parts[12:])
-    if not text.endswith('.') and not text.endswith('?') and not text.endswith('!'):
-        text += '.'
-    update.message.reply_text(text, quote=False)
-
-
 def command_send(update: Update, context: CallbackContext) -> None:
     """returns a media object by id"""
     if len(context.args) != 2:
@@ -200,7 +170,7 @@ def command_config(update: Update, context: CallbackContext) -> None:
         is_admin_chat = update.message.chat.id in _config_list('admins', int)
         is_secret = lambda k: k in (
             'token chat_relays chat_relay_delete_channel banned_users '
-            '4chan_cron_chat_id muted_groups encrypt_password encrypt_salt '
+            '4chan_cron_chat_id muted_groups '
             'ipgeolocation_io_api_key soyjak_cron_chat_id twitter_feeds'
         ).split(' ')
         should_show = lambda k: not is_secret(k) or (is_secret(k) and is_admin_chat)
@@ -219,13 +189,6 @@ def command_config(update: Update, context: CallbackContext) -> None:
         update.message.reply_text('\n'.join([
                 format_config_key(k, v) for k, v in sorted(_config())
             ]), quote=False, parse_mode=PARSEMODE_HTML, disable_web_page_preview=True)
-
-
-def command_haiku(update: Update, _: CallbackContext) -> None:
-    """sends a haiku"""
-    update.message.reply_text(get_random_line('haiku5.txt') +
-                              get_random_line('haiku7.txt') +
-                              get_random_line('haiku5.txt'), quote=False)
 
 
 def command_leave(update: Update, context: CallbackContext) -> None:
@@ -272,23 +235,6 @@ def command_strip(update: Update, context: CallbackContext) -> None:
         update.message.reply_text("This message doesn't have an attachment.")
     else:
         update.message.reply_text('Quote a message to have its contents dumped here.')
-
-
-def command_crypt(update: Update, context: CallbackContext) -> None:
-    """encrypts or decrypts a string"""
-    command = update.message.text.split(' ')[0][1:].replace('@' + context.bot_data['me'].username, '')
-    if len(context.args) == 0:
-        update.message.reply_text(f'Usage: /{command} <text>')
-        return
-    try:
-        update.message.reply_text(
-            getattr(encrypt, command)(' '.join(context.args[0:]),
-                                      _config('encrypt_password'),
-                                      _config('encrypt_salt')),
-            disable_web_page_preview=True
-        )
-    except ValueError:
-        update.message.reply_text("That didn't work.")
 
 
 def command_ip(update: Update, _: CallbackContext) -> None:
@@ -426,15 +372,10 @@ if __name__ == '__main__':
         'actions': actions,
         'edits': edits,
         'me': bot.get_me(),
-        'log_semaphore': threading.Semaphore(),
         'last_tweet_ids': {},
     })
 
     logger.info('Adding handlers...')
-
-    # very low group id so it runs even for banned users
-    # can't run asynchronously or the log file can get corrupted
-    dispatcher.add_handler(MessageHandler(Filters.chat_type.groups, command_log), group=-999)
 
     # relays
     sources = get_relays().keys()
@@ -473,7 +414,6 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('haiku', command_haiku), group=40)
     dispatcher.add_handler(CommandHandler('leave', command_leave), group=40)
     dispatcher.add_handler(CommandHandler('strip', command_strip), group=40)
-    dispatcher.add_handler(CommandHandler(['decrypt', 'encrypt'], command_crypt), group=40)
     dispatcher.add_handler(CommandHandler('contact', command_contact), group=40)
     dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('clear', command_clear, run_async=True), group=40)
@@ -502,9 +442,6 @@ if __name__ == '__main__':
     # responses in private
     dispatcher.add_handler(MessageHandler(~Filters.command & Filters.chat_type.private, command_distort, run_async=True), group=40)
     dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_unhandled, run_async=True), group=40)
-
-    # dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.update.message & Filters.chat_type.groups,
-    #                                       command_haiku, run_async=True), group=60)
 
     logger.info('Adding jobs to the queue...')
 

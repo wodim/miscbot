@@ -50,9 +50,6 @@ distort_video_max_scale = 80
 distort_photo_to_animation_frames = 100
 ; max number of results to be returned when searching for fortunes
 fortune_max_results = 5
-; these are used by the /encrypt and /decrypt commands
-encrypt_password =
-encrypt_salt =
 ; cron intervals for actions (typing notifications) and message edits
 ; setting them to <=0 will disable these cron tasks. that won't disable typing
 ; notifications altogether since a first one is always immediately sent.
