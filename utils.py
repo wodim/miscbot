@@ -1,5 +1,4 @@
 import configparser
-from enum import Enum
 import itertools
 import logging
 import os
@@ -198,40 +197,3 @@ class Downloader:
         logger.info('closing and deleting %s', self.filename)
         self.fp.close()
         os.remove(self.filename)
-
-
-def repeat_words(s, l=1024):
-    """repeats repeats words words in a string as much as possible,
-        making sure the result is not longer than l chars"""
-    # https://stackoverflow.com/a/14878621
-    while '  ' in s:
-        s = s.replace('  ', ' ')
-    s = s.strip()
-    if len(s) >= l:
-        return s
-    words = s.split(' ')
-    return ' '.join([x for item in words for x in itertools.repeat(item, l // (len(s) + len(words)))])
-
-
-class AttachmentType(Enum):
-    PHOTO = 1
-    VIDEO = 2
-    STICKER_STATIC = 3
-    STICKER_ANIMATED = 4
-    VOICE_MESSAGE = 5
-    VIDEO_MESSAGE = 6
-    AUDIO = 7
-    DOCUMENT = 8
-
-
-def download_attachment(update, context, type_: AttachmentType):
-    """downloads an attachment from a message or a quoted message,
-        converting to the target type if necessary
-        TODO needs to implement remaining types"""
-    message = update.message.reply_to_message or update.message
-    if type_ == AttachmentType.PHOTO:
-        # TODO if video, extract first frame. if sticker, turn into jpg. etc
-        if not message.photo:
-            return None
-        return context.bot.get_file(message.photo[-1]).\
-            download(custom_path=get_random_string(12) + '.jpg')

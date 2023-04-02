@@ -109,22 +109,7 @@ def get_scramble_languages() -> list[str]:
             [_config('translate_default_language')])
 
 
-def command_scramble(update: Update, context: CallbackContext) -> None:
+def sub_scramble(text) -> None:
     """handles the /scramble command."""
-    text = get_command_args(update, use_quote=update.message.text.startswith('/scramble'))
-
-    if not text:
-        update.message.reply_text('Scramble what? Type something or quote a message.')
-        return
-
-    context.bot_data['actions'].append(update.message.chat_id, ChatAction.TYPING)
-
-    try:
-        scrambled, _ = sub_translate(text, get_scramble_languages())
-    except Exception as exc:
-        update.message.reply_text('Error: ' + str(exc))
-        return
-    finally:
-        context.bot_data['actions'].remove(update.message.chat_id, ChatAction.TYPING)
-
-    update.message.reply_text(ellipsis(scrambled, MAX_MESSAGE_LENGTH), disable_web_page_preview=True)
+    scrambled, _ = sub_translate(text, get_scramble_languages())
+    return ellipsis(scrambled, MAX_MESSAGE_LENGTH)

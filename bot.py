@@ -19,7 +19,7 @@ from telegram.utils.request import Request
 from _4chan import cron_4chan, command_thread
 from calc import command_calc
 from craiyon import command_craiyon
-from distort import (command_desticker, command_distort, command_distort_caption,
+from distort import (command_photo, command_distort, command_distort_caption,
                      command_invert, command_voice)
 import encrypt
 from huggingface import HuggingFaceFormat, huggingface
@@ -30,7 +30,7 @@ from relay import (command_relay_chat_photo, command_relay_text, command_relay_p
 from sound import command_sound, command_sound_list
 from soyjak import command_soyjak, cron_soyjak
 from text import command_fortune, command_tip, command_oiga
-from translate import command_scramble, command_translate
+from translate import command_translate
 from twitter import cron_twitter
 from utils import (_config, _config_list, capitalize, clean_up, ellipsis,
                    get_command_args, get_random_line, get_relays, logger, is_admin,
@@ -174,6 +174,9 @@ def command_send(update: Update, context: CallbackContext) -> None:
 
 def command_clear(update: Update, _: CallbackContext) -> None:
     """clears all temporary files"""
+    if not is_admin(update.message.from_user.id):
+        update.message.reply_animation(_config('error_animation'))
+        return
     if files := (glob('*.jpg') + glob('*.webm') + glob('*.tgs') + glob('*.webp') +
                  glob('translate_tmp_*.txt') + glob('*.mp4') + glob('*.ogg') + glob('*.png') +
                  glob('downloader_*.tmp')):
@@ -198,7 +201,7 @@ def command_config(update: Update, context: CallbackContext) -> None:
         is_secret = lambda k: k in (
             'token chat_relays chat_relay_delete_channel banned_users '
             '4chan_cron_chat_id muted_groups encrypt_password encrypt_salt '
-            'ipgeolocation_io_api_key'
+            'ipgeolocation_io_api_key soyjak_cron_chat_id twitter_feeds'
         ).split(' ')
         should_show = lambda k: not is_secret(k) or (is_secret(k) and is_admin_chat)
         return '<strong>%s = </strong>%s' % (
@@ -332,7 +335,26 @@ def command_help(update: Update, _: CallbackContext) -> None:
                 doc = getdoc(handler.callback).replace('\n', ' ')
                 slashes = ' '.join(['/' + x for x in handler.command])
                 commands.append(f'<strong>{slashes}</strong> - {doc}')
-    update.message.reply_text('\n'.join(commands), parse_mode=PARSEMODE_HTML)
+    message = ('\n'.join(commands) +
+               '\n\nUse the <b>/contact</b> command to contact the admin(s) of the bot.')
+    update.message.reply_text(message, parse_mode=PARSEMODE_HTML)
+
+
+CONTACT_HELP = """You can use this command to contact the admin(s) of this bot.\n
+Usage: /contact <your message>\n
+Your message, along with your username, will be delivered."""
+def command_contact(update: Update, _: CallbackContext) -> None:
+    """sends a message to all admins"""
+    if message := get_command_args(update):
+        from_ = update.message.from_user.first_name
+        if update.message.from_user.last_name:
+            from_ += f' {update.message.from_user.last_name}'
+        if update.message.from_user.username:
+            from_ += f' @{update.message.from_user.username}'
+        send_admin_message(bot, f'Message from {from_}:\n\n{message[:4000]}')
+        update.message.reply_text('Your message has been delivered.')
+    else:
+        update.message.reply_text(CONTACT_HELP)
 
 
 def command_gfpgan(update: Update, context: CallbackContext) -> None:
@@ -452,14 +474,14 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('leave', command_leave), group=40)
     dispatcher.add_handler(CommandHandler('strip', command_strip), group=40)
     dispatcher.add_handler(CommandHandler(['decrypt', 'encrypt'], command_crypt), group=40)
+    dispatcher.add_handler(CommandHandler('contact', command_contact), group=40)
     dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('clear', command_clear, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler('scramble', command_scramble, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('distort', command_distort, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('voice', command_voice, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('invert', command_invert, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler('desticker', command_desticker, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('photo', command_photo, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler(['craiyon', 'dalle'], command_craiyon, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('sd', command_sd, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('ai', command_craiyon, run_async=True), group=40)
@@ -478,11 +500,7 @@ if __name__ == '__main__':
                                           command_distort_caption, run_async=True), group=41)
 
     # responses in private
-    dispatcher.add_handler(MessageHandler((Filters.text | Filters.poll) & ~Filters.command & Filters.chat_type.private,
-                                          command_scramble, run_async=True), group=40)
-    dispatcher.add_handler(MessageHandler((Filters.photo | Filters.animation | Filters.video | Filters.sticker | Filters.voice | Filters.audio) &
-                                          ~Filters.command & Filters.chat_type.private,
-                                          command_distort, run_async=True), group=40)
+    dispatcher.add_handler(MessageHandler(~Filters.command & Filters.chat_type.private, command_distort, run_async=True), group=40)
     dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_unhandled, run_async=True), group=40)
 
     # dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.update.message & Filters.chat_type.groups,
@@ -510,7 +528,6 @@ if __name__ == '__main__':
         ('tip',          '📞'),
         ('fortune',      '🥠'),
         ('translate',    '㊙️'),
-        ('scramble',     '🎲'),
         ('distort',      '🔨'),
         ('oiga',         '❗️'),
         ('thread',       '🍀'),

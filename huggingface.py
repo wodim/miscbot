@@ -1,5 +1,5 @@
 from base64 import b64decode, b64encode
-from enum import Enum
+from enum import Enum, auto
 import json
 from math import ceil, floor
 import os
@@ -11,15 +11,15 @@ from telegram.ext import CallbackContext
 from wand.image import Image
 import websocket
 
-from utils import (AttachmentType, download_attachment, get_command_args, get_random_string,
-                   is_admin, logger, requests_session)
+from attachments import AttachmentType, download_attachment
+from utils import get_command_args, get_random_string, is_admin, logger, requests_session
 
 
 class HuggingFaceFormat(Enum):
-    TEXT = 1
-    PHOTO = 2
-    VIDEO = 3
-    ANIMATION = 4
+    TEXT = auto()
+    PHOTO = auto()
+    VIDEO = auto()
+    ANIMATION = auto()
 
 
 def from_b64(s):
@@ -61,7 +61,7 @@ class HuggingFaceWS:
                         # some effects increase the size of an image. don't let it go out of hand
                         with Image(blob=from_b64(self.results)) as image:
                             if image.width > 1280 or image.height > 1280:
-                                image.transform(resize=f'{1280}x{1280}>')
+                                image.transform(resize='1280x1280>')
                                 self.results = to_b64(image.make_blob(format='jpeg'))
                         self.data['in_format'][k] = self.results
 
@@ -170,7 +170,7 @@ class HuggingFacePush:
                         # some effects increase the size of an image. don't let it go out of hand
                         with Image(blob=from_b64(self.results)) as image:
                             if image.width > 1280 or image.height > 1280:
-                                image.transform(resize=f'{1280}x{1280}>')
+                                image.transform(resize='1280x1280>')
                                 self.results = to_b64(image.make_blob(format='jpeg'))
                         self.data['in_format'][k] = self.results
 
@@ -198,10 +198,10 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
     data['times'] = 1
     if data.get('multiple'):
         try:
-            data['times'] = int(get_command_args(update))
+            data['times'] = int(get_command_args(update, use_quote=False))
             if not is_admin(update.message.from_user.id) and (data['times'] < 1 or data['times'] > 100):
                 data['times'] = 1
-        except TypeError:
+        except (TypeError, ValueError):
             pass
 
     progress_msg = update.message.reply_text(
@@ -212,16 +212,16 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
     cls = HuggingFacePush if data.get('method') == 'push' else HuggingFaceWS
     result = cls(context.bot_data['edits'], progress_msg, data).run()
 
-    if data['out_format'] == HuggingFaceFormat.PHOTO:
-        result = from_b64(result)
-    elif data['out_format'] == [HuggingFaceFormat.PHOTO]:
-        result = [from_b64(x) for x in result]
-    elif data['out_format'] == HuggingFaceFormat.TEXT:
-        pass
-    else:
-        raise ValueError(f'unknown output format for {data["name"]}')
-
     if result:
+        if data['out_format'] == HuggingFaceFormat.PHOTO:
+            result = from_b64(result)
+        elif data['out_format'] == [HuggingFaceFormat.PHOTO]:
+            result = [from_b64(x) for x in result]
+        elif data['out_format'] == HuggingFaceFormat.TEXT:
+            pass
+        else:
+            raise ValueError(f'unknown output format for {data["name"]}')
+
         if data['out_format'] == HuggingFaceFormat.PHOTO:
             with Image(blob=result) as image:
                 if image.width > 1280 or image.height > 1280:

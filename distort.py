@@ -13,7 +13,9 @@ from telegram.error import BadRequest
 from telegram.ext import CallbackContext
 from wand.image import Image
 
-from utils import _config, clamp, get_random_string, logger, remove_command
+from attachments import AttachmentType, download_attachment
+from translate import sub_scramble
+from utils import _config, clamp, get_command_args, get_random_string, logger, remove_command
 
 
 DISTORT_FORMAT = _config('distort_temporary_format')
@@ -111,7 +113,7 @@ def sub_distort_animation(filename: str, context: CallbackContext, progress_msg)
         source = RX_NUMBER.sub('', source)
         return '%s-distort-%06d%s' % (source[:len(source) - 4], i, source[len(source) - 4:])
 
-    if filename.endswith('.mp4'):
+    if filename.endswith('.mp4') or filename.endswith('.webm'):
         context.bot_data['edits'].append_edit(progress_msg, 'Performing some checks on the video…')
         width, height, frame_count, fps = _get_video_info(filename)
 
@@ -138,7 +140,7 @@ def sub_distort_animation(filename: str, context: CallbackContext, progress_msg)
     _compose_video(filename, fps, prefix)
     context.bot_data['edits'].flush_edits(progress_msg)
 
-    if filename.endswith('.mp4'):
+    if filename.endswith('.mp4') or filename.endswith('.webm'):
         for frame in frames:
             os.remove(frame)
     for file in distorted:
@@ -151,14 +153,6 @@ FFMPEG_CMD_AUDIO = "ffmpeg -i '{original}' -map_metadata -1 -af 'vibrato=d=1,vib
 def sub_distort_audio(filename: str) -> str:
     prefix = 'distort_' + filename[:-4]
     if subprocess.call(FFMPEG_CMD_AUDIO.format(original=filename, prefix=prefix), shell=True) != 0:
-        raise ValueError('Error generating audio.')
-    return prefix + '.ogg'
-
-
-FFMPEG_CMD_VOICE = "ffmpeg -i '{original}' -map_metadata -1 -af 'aformat=s16p' -vbr on -c:a libopus '{prefix}.ogg'"
-def sub_to_voice(filename: str) -> str:
-    prefix = 'voice_' + filename[:-4]
-    if subprocess.call(FFMPEG_CMD_VOICE.format(original=filename, prefix=prefix), shell=True) != 0:
         raise ValueError('Error generating audio.')
     return prefix + '.ogg'
 
@@ -203,90 +197,49 @@ def sub_distort_animated_sticker(filename: str, scale: int) -> str:
 
 def command_voice(update: Update, context: CallbackContext) -> None:
     """handles the /voice command"""
-    if update.message.reply_to_message and update.message.reply_to_message.audio:
-        filename = context.bot.get_file(update.message.reply_to_message.audio.file_id).\
-            download(custom_path=get_random_string(12) + '.ogg')
-    elif update.message.reply_to_message and update.message.reply_to_message.voice:
-        filename = context.bot.get_file(update.message.reply_to_message.voice.file_id).\
-            download(custom_path=get_random_string(12) + '.ogg')
-    elif update.message.reply_to_message and update.message.reply_to_message.document:
-        filename = context.bot.get_file(update.message.reply_to_message.document.file_id).\
-            download(custom_path=get_random_string(12) + '.ogg')
-    elif update.message.reply_to_message and update.message.reply_to_message.video:
-        filename = context.bot.get_file(update.message.reply_to_message.video.file_id).\
-            download(custom_path=get_random_string(12) + '.ogg')
-    else:
+    filename = download_attachment(update, context, AttachmentType.AUDIO)
+    if not filename:
         update.message.reply_text('Quote an audio or video file to have it converted into a voice message.')
         return
 
-    context.bot_data['actions'].append(update.message.chat_id, ChatAction.RECORD_VOICE)
-    try:
-        voice = sub_to_voice(filename)
-    except Exception as exc:
-        logger.exception('Error converting')
-        update.message.reply_text('Error converting: ' + str(exc))
-        return
-    finally:
-        context.bot_data['actions'].remove(update.message.chat_id, ChatAction.RECORD_VOICE)
-
-    update.message.reply_voice(voice=open(voice, 'rb'), quote=False)
+    update.message.reply_voice(voice=open(filename, 'rb'), quote=False)
 
     os.remove(filename)
-    os.remove(voice)
 
 
-FILE_TYPES = [
-    ('photo', 'jpg'),
-    ('animation', 'mp4'),
-    ('video', 'mp4'),
-    ('sticker', ('is_animated', 'tgs', 'webp')),
-    ('voice', 'ogg'),
-    ('audio', 'ogg'),
-]
 def command_distort(update: Update, context: CallbackContext) -> None:
     """handles the /distort command"""
-    message = update.message.reply_to_message or update.message
-    text, filename = None, None
-    for type_, extension in FILE_TYPES:
-        if getattr(message, type_):
-            obj = getattr(message, type_)
-        else:
-            continue
-        try:
-            # the photo object has different sizes so we have to choose the
-            # last one (the biggest one)
-            obj = obj[-1]
-        except TypeError:
-            pass
-        if isinstance(extension, tuple):
-            attr, ext1, ext2 = extension
-            extension = ext1 if getattr(obj, attr) else ext2
-        filename = context.bot.get_file(obj).download(custom_path=f'{get_random_string(12)}.{extension}')
+    filename = download_attachment(update, context)
+    if filename:
         text = update.message.caption or update.message.text
-    if not filename:
-        update.message.reply_text('Nothing to distort. Upload or quote a photo, video, GIF, sticker, audio, or voice message.')
-        return
-
-    if filename.endswith('.jpg') or filename.endswith('.webp'):
-        command_distort_photo(update, context, filename, text)
-    elif filename.endswith('.ogg'):
-        command_distort_audio(update, context, filename)
-    elif filename.endswith('.mp4'):
-        command_distort_animation(update, context, filename)
-    elif filename.endswith('.tgs'):
-        command_distort_animated_sticker(update, context, filename, text)
+        if filename.endswith('.jpg') or filename.endswith('.webp'):
+            command_distort_photo(update, context, filename, text)
+        elif filename.endswith('.ogg'):
+            command_distort_audio(update, context, filename)
+        elif filename.endswith('.mp4') or filename.endswith('.webm'):
+            command_distort_animation(update, context, filename)
+        elif filename.endswith('.tgs'):
+            command_distort_animated_sticker(update, context, filename, text)
+    else:
+        text = get_command_args(update, use_quote=update.message.text.startswith('/distort'))
+        if text:
+            context.bot_data['actions'].append(update.message.chat_id, ChatAction.TYPING)
+            try:
+                update.message.reply_text(sub_scramble(text), disable_web_page_preview=True)
+            except Exception as exc:
+                update.message.reply_text(f'Error distorting: {str(exc)}')
+            finally:
+                context.bot_data['actions'].remove(update.message.chat_id, ChatAction.TYPING)
+        else:
+            update.message.reply_text('Nothing to distort. Upload or quote text, a photo, video, GIF, sticker, audio, or voice or video note.')
+            return
 
 
 def command_invert(update: Update, context: CallbackContext) -> None:
     """handles the /invert command"""
-    if update.message.photo:
-        filename = context.bot.get_file(update.message.photo[-1]).\
-            download(custom_path=get_random_string(12) + '.jpg')
-    elif update.message.reply_to_message and len(update.message.reply_to_message.photo):
-        filename = context.bot.get_file(update.message.reply_to_message.photo[-1]).\
-            download(custom_path=get_random_string(12) + '.jpg')
-    else:
-        update.message.reply_text('Nothing to invert. Upload or quote a photo.')
+    filename = download_attachment(update, context, AttachmentType.PHOTO)
+    if not filename:
+        update.message.reply_text('Quote a compatible message.')
         return
 
     inverted_filename = sub_invert(filename)
@@ -297,27 +250,16 @@ def command_invert(update: Update, context: CallbackContext) -> None:
     os.remove(inverted_filename)
 
 
-def command_desticker(update: Update, context: CallbackContext) -> None:
-    """turns a non-animated sticker into a photo"""
-    if (update.message.reply_to_message and update.message.reply_to_message.sticker
-            and not update.message.reply_to_message.sticker.is_animated):
-        filename = context.bot.get_file(update.message.reply_to_message.sticker).\
-            download(custom_path=get_random_string(12) + '.webp')
-    else:
-        update.message.reply_text('Quote a non-animated sticker.')
+def command_photo(update: Update, context: CallbackContext) -> None:
+    """turns almost anything into a photo"""
+    filename = download_attachment(update, context, AttachmentType.PHOTO)
+    if not filename:
+        update.message.reply_text('Quote a compatible message.')
         return
 
-    with wand_semaphore:
-        img = Image(filename=filename)
-        img.compression_quality = 100
-        img.save(filename=filename + '.jpg')
-        img.destroy()
-        img.close()
-
-    update.message.reply_photo(open(filename + '.jpg', 'rb'))
+    update.message.reply_photo(open(filename, 'rb'))
 
     os.remove(filename)
-    os.remove(filename + '.jpg')
 
 
 def command_distort_animated_sticker(update: Update, context: CallbackContext, filename: str, text: str) -> None:
