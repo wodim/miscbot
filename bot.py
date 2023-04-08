@@ -46,8 +46,11 @@ def command_restart(update: Update, _: CallbackContext) -> None:
     """restarts the bot if the user is an admin"""
     if is_admin(update.message.from_user.id):
         update.message.reply_text('Aieee!')
-        with open('restart', 'wb') as fp:
-            fp.write(b'%d' % update.message.chat.id)
+        try:
+            with open('restart', 'wb') as fp:
+                fp.write(b'%d' % update.message.chat.id)
+        except Exception as exc:
+            update.message.reply_text(f"Couldn't save restart state file: {str(exc)}")
         os.kill(os.getpid(), signal.SIGKILL)
     else:
         update.message.reply_animation(_config('error_animation'))
@@ -171,7 +174,9 @@ def command_config(update: Update, context: CallbackContext) -> None:
         is_secret = lambda k: k in (
             'token chat_relays chat_relay_delete_channel banned_users '
             '4chan_cron_chat_id muted_groups '
-            'ipgeolocation_io_api_key soyjak_cron_chat_id twitter_feeds'
+            'ipgeolocation_io_api_key soyjak_cron_chat_id twitter_feeds '
+            'twitter_consumer_key twitter_consumer_secret '
+            'twitter_access_token twitter_access_token_secret'
         ).split(' ')
         should_show = lambda k: not is_secret(k) or (is_secret(k) and is_admin_chat)
         return '<strong>%s = </strong>%s' % (
@@ -291,7 +296,7 @@ Usage: /contact <your message>\n
 Your message, along with your username, will be delivered."""
 def command_contact(update: Update, _: CallbackContext) -> None:
     """sends a message to all admins"""
-    if message := get_command_args(update):
+    if message := get_command_args(update, use_quote=False):
         from_ = update.message.from_user.first_name
         if update.message.from_user.last_name:
             from_ += f' {update.message.from_user.last_name}'
@@ -447,7 +452,7 @@ if __name__ == '__main__':
 
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
-    dispatcher.job_queue.run_repeating(cron_twitter, interval=10, first=1)
+    dispatcher.job_queue.run_repeating(cron_twitter, interval=20, first=1)
 
     if actions_cron_interval > 0:
         dispatcher.job_queue.run_repeating(actions.cron, interval=actions_cron_interval, name='actions').enabled = False

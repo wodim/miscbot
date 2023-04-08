@@ -32,7 +32,7 @@ def to_b64(i):
     return 'data:image/jpeg;base64,' + b64encode(i).decode('utf-8')
 
 
-class HuggingFaceWS:
+class HuggingFace:
     def __init__(self, edits, progress_msg, data):
         self.edits = edits
         self.progress_msg = progress_msg
@@ -40,7 +40,17 @@ class HuggingFaceWS:
         self.data['fn_index'] = self.data.get('fn_index') or 0
         self.results = None
         self.hash = None
+        self.progress = 1
 
+    @property
+    def name(self):
+        if self.data['times'] == 1:
+            return self.data['name']
+        else:
+            return f'{self.data["name"]} ({self.progress}/{self.data["times"]})'
+
+
+class HuggingFaceWS(HuggingFace):
     def run(self):
         for _ in range(self.data['times']):
             while True:
@@ -50,12 +60,13 @@ class HuggingFaceWS:
                 ws.run_forever(origin=f'https://{self.data["space"]}.hf.space', sockopt=((socket.IPPROTO_TCP, socket.TCP_NODELAY, 1),))
 
                 if self.results == 'queue_full' and self.progress_msg:
-                    self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: queue is full, this is going to take a while.'))
+                    self.edits.append_edit(self.progress_msg, (f'{self.name}: queue is full, this is going to take a while.'))
                 else:
                     break
 
             if self.data['times'] > 1:
                 # refeed
+                self.progress += 1
                 for k, v in enumerate(self.data['in_format']):
                     if isinstance(v, str) and v.startswith('data:'):
                         # some effects increase the size of an image. don't let it go out of hand
@@ -68,18 +79,18 @@ class HuggingFaceWS:
         return self.results
 
     def on_open(self, ws):
-        logger.info('%s: connected', self.data['name'])
+        logger.info('%s: connected', self.name)
         if self.data.get('hash_on_open'):
-            logger.info('%s: sending on_open hash', self.data['name'])
+            logger.info('%s: sending on_open hash', self.name)
             ws.send(json.dumps({'hash': self.hash}))
 
     def on_close(self, *_):
-        logger.info('%s: socket closed', self.data['name'])
+        logger.info('%s: socket closed', self.name)
 
     def on_message(self, ws, message):
         message = json.loads(message)
         if message['msg'] == 'send_data':
-            logger.info('%s asked for data', self.data['name'])
+            logger.info('%s asked for data', self.name)
             ws.send(json.dumps({
                 'fn_index': self.data['fn_index'],
                 'data': self.data['in_format'],
@@ -87,26 +98,26 @@ class HuggingFaceWS:
             }))
         elif message['msg'] == 'estimation':
             if message.get('rank') and message.get('rank_eta'):
-                logger.info('%s says we are at rank %d with %d seconds left', self.data['name'], message['rank'], message['rank_eta'])
+                logger.info('%s says we are at rank %d with %d seconds left', self.name, message['rank'], message['rank_eta'])
                 time_left = f'{ceil(message["rank_eta"] / 60)} minutes' if message['rank_eta'] > 60 else f'{ceil(message["rank_eta"])} seconds'
                 if self.progress_msg:
-                    self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: in queue, {time_left} left…'))
+                    self.edits.append_edit(self.progress_msg, (f'{self.name}: in queue, {time_left} left…'))
             else:
                 if self.progress_msg:
-                    self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: in queue…'))
+                    self.edits.append_edit(self.progress_msg, (f'{self.name}: in queue…'))
         elif message['msg'] == 'process_starts':
-            logger.info('%s says it has started to process the prompt', self.data['name'])
+            logger.info('%s says it has started to process the prompt', self.name)
             if self.progress_msg:
-                self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: generating…'))
+                self.edits.append_edit(self.progress_msg, (f'{self.name}: generating…'))
         elif message['msg'] == 'process_completed':
-            logger.info('%s says its done', self.data['name'])
+            logger.info('%s says its done', self.name)
             try:
                 self.results = message['output']['data'][0]
             except KeyError:
                 self.results = None
             ws.close()
         elif message['msg'] == 'queue_full':
-            logger.info('%s says queue is full', self.data['name'])
+            logger.info('%s says queue is full', self.name)
             self.results = message['msg']
             ws.close()
         elif message['msg'] == 'send_hash':
@@ -115,19 +126,11 @@ class HuggingFaceWS:
             logger.info('unhandled message %s', message)
 
 
-class HuggingFacePush:
-    def __init__(self, edits, progress_msg, data):
-        self.edits = edits
-        self.progress_msg = progress_msg
-        self.data = data
-        self.data['fn_index'] = self.data.get('fn_index') or 0
-        self.results = None
-        self.hash = None
-
+class HuggingFacePush(HuggingFace):
     def run(self):
         for _ in range(self.data['times']):
             self.hash = get_random_string(11)
-            logger.info('%s: getting hash', self.data['name'])
+            logger.info('%s: getting hash', self.name)
             r = requests_session.post(f'https://{self.data["space"]}.hf.space/api/queue/push/', json={
                 'fn_index': self.data['fn_index'],
                 'data': self.data['in_format'],
@@ -142,7 +145,7 @@ class HuggingFacePush:
                 }).json()
 
                 if r['status'] == 'COMPLETE':
-                    logger.info('%s: complete', self.data['name'])
+                    logger.info('%s: complete', self.name)
                     if self.data['out_format'] == HuggingFaceFormat.PHOTO:
                         self.results = r['data']['data'][0]
                         break
@@ -153,18 +156,19 @@ class HuggingFacePush:
                         # TODO more formats
                         return
                 elif r['status'] == 'PENDING':
-                    logger.info('%s: pending', self.data['name'])
-                    self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: pending…'))
+                    logger.info('%s: pending', self.name)
+                    self.edits.append_edit(self.progress_msg, (f'{self.name}: pending…'))
                 elif r['status'] == 'QUEUED':
-                    logger.info('%s: in queue', self.data['name'])
-                    self.edits.append_edit(self.progress_msg, (f'{self.data["name"]}: queued…'))
+                    logger.info('%s: in queue', self.name)
+                    self.edits.append_edit(self.progress_msg, (f'{self.name}: queued…'))
                 else:
-                    logger.info('%s: unknown status "%s"', self.data['name'], r['status'])
+                    logger.info('%s: unknown status "%s"', self.name, r['status'])
 
                 time.sleep(.5)
 
             if self.data['times'] > 1:
                 # refeed
+                self.progress += 1
                 for k, v in enumerate(self.data['in_format']):
                     if isinstance(v, str) and v.startswith('data:'):
                         # some effects increase the size of an image. don't let it go out of hand

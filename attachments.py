@@ -37,11 +37,11 @@ def _download_anything(message, context):
             os.rename(filename, new_filename)
             return new_filename
     if getattr(message, 'voice'):
-        return download(message.voice, 'mp4')
+        return download(message.voice, 'ogg')
     if getattr(message, 'video_note'):
         return download(message.video_note, 'mp4')
     if getattr(message, 'audio'):
-        return download(message.audio, 'mp4')
+        return download(message.audio, 'ogg')
 
 
 VIDEO_TO_PHOTO_CMD = r"""ffmpeg -i '{filename}' -vf select=eq\(n\\,0\) '{filename}.jpg'"""
@@ -86,7 +86,8 @@ def download_attachment(update, context, type_: AttachmentType=None):
                 return filename + '.jpg'
             if filename.endswith('.webm'):
                 return _video_to_photo(filename)
-        if getattr(message, 'video') or getattr(message, 'animation'):
+        if (getattr(message, 'video') or getattr(message, 'animation') or
+                getattr(message, 'video_note')):
             return _video_to_photo(_download_anything(message, context))
     if type_ == AttachmentType.AUDIO:
         if (getattr(message, 'video') or getattr(message, 'audio') or

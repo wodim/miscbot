@@ -1,6 +1,5 @@
-from base64 import b64decode
 from itertools import count
-from math import floor
+from math import ceil, floor, sqrt
 from time import sleep
 
 import requests
@@ -31,19 +30,22 @@ def command_craiyon(update: Update, _: CallbackContext) -> None:
             'token': None,
         })
         if r.ok:
-            images = [get_url(f'https://img.craiyon.com/{path}') for path in r.json()['images']]
+            images = [Image(blob=get_url(f'https://img.craiyon.com/{path}')) for path in r.json()['images']]
+            size = images[0].width
+            side = ceil(sqrt(len(images)))
             try:
-                with Image(width=CRAIYON_SIZE * 3, height=CRAIYON_SIZE * 3) as canvas:
-                    for i, image_blob in enumerate(images):
-                        with Image(blob=image_blob) as image:
-                            left = (i % 3 + 1) * CRAIYON_SIZE - CRAIYON_SIZE
-                            top = floor(i / 3) * CRAIYON_SIZE
-                            canvas.composite(image, left=left, top=top)
+                with Image(width=size * side, height=size * side) as canvas:
+                    for i, image in enumerate(images):
+                        left = (i % side + 1) * size - size
+                        top = floor(i / side) * size
+                        canvas.composite(image, left=left, top=top)
+                        image.close()
+                        image.destroy()
                     update.message.reply_photo(canvas.make_blob(format='jpeg'))
                 break
             except Exception as exc:
                 logger.info('craiyon request failed to send: %s. retrying...', exc)
-        logger.info('craiyon request for failed. retrying...')
+        logger.info('craiyon request failed. retrying...')
         sleep(1)
 
     progress_msg.delete()
