@@ -30,11 +30,14 @@ translate_http_timeout = 3
 ; how many images will the bot distort at the same time. distorting an image is
 ; a cpu and memory intensive process, so this needs to be capped
 distort_max_concurrent = 3
+; when /thread is used without arguments, or when the cron job is executed, a thread from one
+; of these boards will be retrieved at random
 4chan_boards = r9k wsg g v
+; chat id for 4chan cron job - comment out to disable it
 4chan_cron_chat_id = -123123123123
 ; these users will be ignored in public and private
 banned_users = 123123123
-; the bot will ignore all commands in these groups, but logs will keep being stored
+; the bot will ignore all commands in these groups
 muted_groups = -123123123
 ; max number of threads that will be spawned to dispatch handlers
 num_threads = 16
@@ -55,10 +58,12 @@ fortune_max_results = 5
 ; notifications altogether since a first one is always immediately sent.
 actions_cron_interval = 5
 edits_cron_interval = 5
-; sign up for free at https://api.ipgeolocation.io/i
+; sign up for free at https://ipgeolocation.io/
 ipgeolocation_io_api_key =
 ; the image that will be sent when there's an error sending a soyjak
 soyjak_error_photo_url = https://booru.soy/_images/0b88e33e7dd98cf46d0777de7ceb183a/32876 - SoyBooru.png
+; chat id for soyjak cron job - comment out to disable it
+soyjak_cron_chat_id = -123123123123
 ; twitter feeds, format is username|chat_id
 twitter_feeds = someone|-123123123123, someone_else|-456456456456
 ; keys for the 1.1 version of the twitter api

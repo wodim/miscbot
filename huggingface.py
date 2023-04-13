@@ -1,7 +1,6 @@
-from base64 import b64decode, b64encode
 from enum import Enum, auto
 import json
-from math import ceil, floor
+from math import ceil
 import os
 import socket
 import time
@@ -12,7 +11,8 @@ from wand.image import Image
 import websocket
 
 from attachments import AttachmentType, download_attachment
-from utils import get_command_args, get_random_string, is_admin, logger, requests_session
+from utils import (create_gallery, get_command_args, get_random_string, image_from_b64, image_to_b64,
+                   is_admin, logger, requests_session)
 
 
 class HuggingFaceFormat(Enum):
@@ -20,16 +20,6 @@ class HuggingFaceFormat(Enum):
     PHOTO = auto()
     VIDEO = auto()
     ANIMATION = auto()
-
-
-def from_b64(s):
-    s = s.replace('data:image/png;base64,', '')
-    s = s.replace('data:image/jpeg;base64,', '')
-    return b64decode(s)
-
-
-def to_b64(i):
-    return 'data:image/jpeg;base64,' + b64encode(i).decode('utf-8')
 
 
 class HuggingFace:
@@ -70,10 +60,10 @@ class HuggingFaceWS(HuggingFace):
                 for k, v in enumerate(self.data['in_format']):
                     if isinstance(v, str) and v.startswith('data:'):
                         # some effects increase the size of an image. don't let it go out of hand
-                        with Image(blob=from_b64(self.results)) as image:
+                        with Image(blob=image_from_b64(self.results)) as image:
                             if image.width > 1280 or image.height > 1280:
                                 image.transform(resize='1280x1280>')
-                                self.results = to_b64(image.make_blob(format='jpeg'))
+                                self.results = image_to_b64(image.make_blob(format='jpeg'))
                         self.data['in_format'][k] = self.results
 
         return self.results
@@ -172,10 +162,10 @@ class HuggingFacePush(HuggingFace):
                 for k, v in enumerate(self.data['in_format']):
                     if isinstance(v, str) and v.startswith('data:'):
                         # some effects increase the size of an image. don't let it go out of hand
-                        with Image(blob=from_b64(self.results)) as image:
+                        with Image(blob=image_from_b64(self.results)) as image:
                             if image.width > 1280 or image.height > 1280:
                                 image.transform(resize='1280x1280>')
-                                self.results = to_b64(image.make_blob(format='jpeg'))
+                                self.results = image_to_b64(image.make_blob(format='jpeg'))
                         self.data['in_format'][k] = self.results
 
         return self.results
@@ -191,7 +181,7 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
                 update.message.reply_text('This command requires a photo. Post or quote one.')
                 return
             with open(photo, 'rb') as fp:
-                data['in_format'][k] = to_b64(fp.read())
+                data['in_format'][k] = image_to_b64(fp.read())
             os.remove(photo)
         elif v == HuggingFaceFormat.TEXT:
             data['in_format'][k] = get_command_args(update, use_quote=True)
@@ -218,9 +208,9 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
 
     if result:
         if data['out_format'] == HuggingFaceFormat.PHOTO:
-            result = from_b64(result)
+            result = image_from_b64(result)
         elif data['out_format'] == [HuggingFaceFormat.PHOTO]:
-            result = [from_b64(x) for x in result]
+            result = [image_from_b64(x) for x in result]
         elif data['out_format'] == HuggingFaceFormat.TEXT:
             pass
         else:
@@ -234,17 +224,8 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
                 else:
                     update.message.reply_photo(result)
         elif data['out_format'] == [HuggingFaceFormat.PHOTO]:
-            # TODO: dehardcode
-            SD_SIZE = 768
-            SD_SIDE = 2
-            with Image(width=SD_SIZE * SD_SIDE, height=SD_SIZE * SD_SIDE) as canvas:
-                for i, image_blob in enumerate(result):
-                    with Image(blob=image_blob) as image:
-                        image.transform(resize=f'{SD_SIZE}x{SD_SIZE}>')
-                        left = (i % SD_SIDE + 1) * SD_SIZE - SD_SIZE
-                        top = floor(i / SD_SIDE) * SD_SIZE
-                        canvas.composite(image, left=left, top=top)
-                update.message.reply_photo(canvas.make_blob(format='jpeg'))
+            images = [Image(blob=image) for image in result]
+            update.message.reply_photo(create_gallery(images))
         elif data['out_format'] == HuggingFaceFormat.TEXT:
             update.message.reply_text(result)
         progress_msg.delete()

@@ -4,6 +4,7 @@ import html
 from inspect import getdoc
 import os
 import pprint
+import random
 import signal
 import socket
 
@@ -16,7 +17,7 @@ from telegram.utils.request import Request
 
 from _4chan import cron_4chan, command_thread
 from calc import command_calc
-from craiyon import command_craiyon
+from craiyon import command_craiyon, command_dalle
 from distort import (command_photo, command_distort, command_distort_caption,
                      command_invert, command_voice)
 from huggingface import HuggingFaceFormat, huggingface
@@ -26,7 +27,7 @@ from relay import (command_relay_chat_photo, command_relay_text, command_relay_p
                    cron_delete)
 from sound import command_sound, command_sound_list
 from soyjak import command_soyjak, cron_soyjak
-from text import command_fortune, command_haiku, command_tip, command_oiga
+from text import command_fortune, command_imp, command_haiku, command_tip, command_oiga
 from translate import command_translate
 from twitter import cron_twitter
 from utils import (_config, _config_list, clean_up, ellipsis,
@@ -333,11 +334,22 @@ def command_caption(update: Update, context: CallbackContext) -> None:
 
 
 def command_sd(update: Update, context: CallbackContext) -> None:
-    """requests images for a specific prompt from stable diffusion"""
+    """requests images for a specific prompt from stable diffusion 2.1"""
     huggingface(update, context, {
-        'name': 'Stable Diffusion',
+        'name': 'Stable Diffusion 2.1',
         'space': 'stabilityai-stable-diffusion',
         'in_format': [HuggingFaceFormat.TEXT, 'low quality', 9],
+        'out_format': [HuggingFaceFormat.PHOTO],
+        'fn_index': 2,
+    })
+
+
+def command_sd1(update: Update, context: CallbackContext) -> None:
+    """requests images for a specific prompt from stable diffusion"""
+    huggingface(update, context, {
+        'name': 'Stable Diffusion 1',
+        'space': 'stabilityai-stable-diffusion-1',
+        'in_format': [HuggingFaceFormat.TEXT, 4, 50, 9, random.randint(0, 2147483647)],
         'out_format': [HuggingFaceFormat.PHOTO],
         'fn_index': 2,
     })
@@ -417,18 +429,21 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('load', command_load), group=40)
     dispatcher.add_handler(CommandHandler('config', command_config), group=40)
     dispatcher.add_handler(CommandHandler('haiku', command_haiku), group=40)
+    dispatcher.add_handler(CommandHandler('imp', command_imp), group=40)
     dispatcher.add_handler(CommandHandler('leave', command_leave), group=40)
     dispatcher.add_handler(CommandHandler('strip', command_strip), group=40)
     dispatcher.add_handler(CommandHandler('contact', command_contact), group=40)
     dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('clear', command_clear, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler('distort', command_distort, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler(['distort', 'scramble'], command_distort, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('voice', command_voice, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('invert', command_invert, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('photo', command_photo, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler(['craiyon', 'dalle'], command_craiyon, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('craiyon', command_craiyon, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('dalle', command_dalle, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('sd', command_sd, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('sd1', command_sd1, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('ai', command_craiyon, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('ai', command_sd, run_async=True), group=41)
     dispatcher.add_handler(CommandHandler('gfpgan', command_gfpgan, run_async=True), group=40)
@@ -452,7 +467,7 @@ if __name__ == '__main__':
 
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
-    dispatcher.job_queue.run_repeating(cron_twitter, interval=20, first=1)
+    dispatcher.job_queue.run_repeating(cron_twitter, interval=10, first=1)
 
     if actions_cron_interval > 0:
         dispatcher.job_queue.run_repeating(actions.cron, interval=actions_cron_interval, name='actions').enabled = False
@@ -467,11 +482,10 @@ if __name__ == '__main__':
     logger.info('Setting commands...')
 
     bot.set_my_commands([
-        ('tip',          '📞'),
         ('fortune',      '🥠'),
+        ('imp',          '😈'),
         ('translate',    '㊙️'),
         ('distort',      '🔨'),
-        ('oiga',         '❗️'),
         ('thread',       '🍀'),
         ('calc',         '🧮'),
         ('craiyon',      '🎨'),

@@ -30,6 +30,11 @@ def command_relay_photo(update: Update, context: CallbackContext) -> None:
             return
         filename = context.bot.get_file(update.message.sticker.file_id).\
             download(custom_path=get_random_string(12) + '.jpg')
+        with open(filename, 'rb') as fp:
+            if fp.read(4) == b'RIFF':
+                # this is a webm, ignore it
+                os.remove(filename)
+                return
     else:
         filename = context.bot.get_file(update.message.photo[-1]).\
             download(custom_path=get_random_string(12) + '.jpg')

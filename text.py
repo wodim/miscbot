@@ -52,15 +52,21 @@ def command_fortune(update: Update, context: CallbackContext) -> None:
         msg(get_fortune())
 
 
-def command_tip(update: Update, context: CallbackContext) -> None:
-    """handles the /tip command"""
+def command_tip(update: Update, _: CallbackContext) -> None:
+    """gives you a useful tip"""
     update.message.reply_text(get_random_line('tips.txt'),
                               disable_web_page_preview=True, quote=False)
 
 
-def command_oiga(update: Update, context: CallbackContext) -> None:
-    """handles the /oiga command"""
+def command_oiga(update: Update, _: CallbackContext) -> None:
+    """oiga oiga oiga oiga"""
     update.message.reply_text(get_random_line('oiga.txt'),
+                              disable_web_page_preview=True, quote=False)
+
+
+def command_imp(update: Update, _: CallbackContext) -> None:
+    """let the imp in a ball tell you your fortune"""
+    update.message.reply_text(get_random_line('imp.txt'),
                               disable_web_page_preview=True, quote=False)
 
 

@@ -1,15 +1,16 @@
+from base64 import b64decode, b64encode
 import configparser
-import itertools
 import logging
+from math import ceil, floor, sqrt
 import os
 import random
 import re
 import string
 import unicodedata
 
-from bs4 import BeautifulSoup
 import emoji
 import requests
+from wand.image import Image
 
 
 logging.getLogger('apscheduler').setLevel(logging.WARNING)
@@ -174,17 +175,13 @@ def get_url(url):
     return requests_session.get(url).content
 
 
-def get_html_element(html, element):
-    soup = BeautifulSoup(html, 'lxml')
-    return soup.select_one(element)
-
-
 class Downloader:
     """this is a context manager that downloads files through
         http using the shared requests session"""
     def __init__(self, url):
         self.filename = f'downloader_{get_random_string(12)}.tmp'
         self.url = url
+        self.fp = None
 
     def __enter__(self):
         self.fp = open(self.filename, 'w+b')
@@ -197,3 +194,27 @@ class Downloader:
         logger.info('closing and deleting %s', self.filename)
         self.fp.close()
         os.remove(self.filename)
+
+
+def image_from_b64(s):
+    s = s.replace('data:image/png;base64,', '')
+    s = s.replace('data:image/jpeg;base64,', '')
+    return b64decode(s)
+
+
+def image_to_b64(i):
+    return 'data:image/jpeg;base64,' + b64encode(i).decode('utf-8')
+
+
+def create_gallery(images):
+    """creates a gallery from a list of images"""
+    size = images[0].width
+    side = ceil(sqrt(len(images)))
+    with Image(width=size * side, height=size * side) as canvas:
+        for i, image in enumerate(images):
+            left = (i % side + 1) * size - size
+            top = floor(i / side) * size
+            canvas.composite(image, left=left, top=top)
+            image.close()
+            image.destroy()
+        return canvas.make_blob(format='jpeg')

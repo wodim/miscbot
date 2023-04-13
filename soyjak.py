@@ -1,9 +1,10 @@
 import datetime
 
+from bs4 import BeautifulSoup
 from telegram import ChatAction, Update
 from telegram.ext import CallbackContext
 
-from utils import _config, get_html_element, get_url, logger
+from utils import _config, get_url, logger
 
 
 def get_soyjak() -> str:
@@ -11,7 +12,8 @@ def get_soyjak() -> str:
     while not image_url:
         html = get_url('https://booru.soy/random_image/view')
         try:
-            image_url = get_html_element(html, '#main_image')['src']
+            soup = BeautifulSoup(html, 'lxml')
+            image_url = soup.select_one('#main_image')['src']
         except KeyError:
             # it was a video
             pass
