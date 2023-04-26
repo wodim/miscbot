@@ -1,14 +1,19 @@
+from telegram import Update
 from telegram.ext import CallbackContext
 from tweepy import API, OAuthHandler
 
-from utils import _config, logger
+from utils import _config, is_admin, logger
 
 
 # TODO this should be a dict "username -> [channels]" to deduplicate feeds
-def get_twitter_feeds() -> dict:
+def _get_twitter_feeds() -> dict:
     if feeds := _config('twitter_feeds'):
         return [(x, int(y)) for x, y in [x.strip().split('|') for x in feeds.split(',')]]
     return []
+
+
+def _create_link(username: str, id_: int) -> str:
+    return f'https://vxtwitter.com/{username}/status/{id_}'
 
 
 auth = OAuthHandler(_config('twitter_consumer_key'), _config('twitter_consumer_secret'))
@@ -17,7 +22,7 @@ api = API(auth)
 
 
 def cron_twitter(context: CallbackContext) -> None:
-    for username, chat_id in get_twitter_feeds():
+    for username, chat_id in _get_twitter_feeds():
         try:
             last_tweets = api.user_timeline(screen_name=username)
         except Exception as exc:
@@ -37,6 +42,20 @@ def cron_twitter(context: CallbackContext) -> None:
                     not hasattr(tweet, 'retweeted_status') or
                     tweet.retweeted_status.user.screen_name != tweet.user.screen_name
                 ):
-                    url = f'https://fxtwitter.com/{username}/status/{tweet.id}'
+                    url = _create_link(username, tweet.id)
                     logger.info('Posting %s', url)
                     context.bot.send_message(chat_id, url)
+
+
+def command_twitter(update: Update, context: CallbackContext) -> None:
+    """shows latest saved tweets for each account we're watching"""
+    if is_admin(update.message.from_user.id):
+        if context.bot_data['last_tweet_ids']:
+            update.message.reply_text('\n'.join([f'{username}: {_create_link(username, id_)}'
+                                                for username, id_
+                                                in context.bot_data['last_tweet_ids'].items()]),
+                                    disable_web_page_preview=True)
+        else:
+            update.message.reply_text('Nothing saved (yet).')
+    else:
+        update.message.reply_animation(_config('error_animation'))

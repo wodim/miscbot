@@ -20,16 +20,20 @@ def command_craiyon(update: Update, _: CallbackContext) -> None:
     )
 
     while True:
-        r = requests_session.post('https://api.craiyon.com/draw', json={
+        r = requests_session.post('https://api.craiyon.com/v3', json={
             'prompt': prompt,
+            'negative_prompt': 'low quality',
+            'model': 'none',
             'version': '35s5hfwn9n78gb06',
             'token': None,
         })
         if r.ok:
-            images = [Image(blob=get_url(f'https://img.craiyon.com/{path}')) for path in r.json()['images']]
-            update.message.reply_photo(create_gallery(images))
+            json = r.json()
+            images = [Image(blob=get_url(f'https://img.craiyon.com/{path}')) for path in json['images']]
+            next_prompt = json['next_prompt'] if not json['next_prompt'].startswith('Sorry,') else None
+            update.message.reply_photo(create_gallery(images), caption=f'Suggestion:\n{next_prompt}')
             break
-        logger.info('craiyon request failed. retrying...')
+        logger.info('craiyon request failed: "%s". retrying...', r.text)
         sleep(1)
 
     progress_msg.delete()

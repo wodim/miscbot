@@ -29,7 +29,7 @@ from sound import command_sound, command_sound_list
 from soyjak import command_soyjak, cron_soyjak
 from text import command_fortune, command_imp, command_haiku, command_tip, command_oiga
 from translate import command_translate
-from twitter import cron_twitter
+from twitter import command_twitter, cron_twitter
 from utils import (_config, _config_list, clean_up, ellipsis,
                    get_command_args, get_relays, logger, is_admin,
                    send_admin_message)
@@ -433,6 +433,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('leave', command_leave), group=40)
     dispatcher.add_handler(CommandHandler('strip', command_strip), group=40)
     dispatcher.add_handler(CommandHandler('contact', command_contact), group=40)
+    dispatcher.add_handler(CommandHandler('twitter', command_twitter), group=40)
     dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('clear', command_clear, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)

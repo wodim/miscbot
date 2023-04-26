@@ -36,8 +36,7 @@ def sub_distort(source: str, output: str = '', scale: float = -1, dimension: str
     if dimension not in ('h', 'w', '*'):
         dimension = '*'
 
-    with wand_semaphore:
-        img = Image(filename=source)
+    with wand_semaphore, Image(filename=source) as img:
         w, h = img.width, img.height
         new_w = int(w * (1 - (scale / 100))) if dimension in ('*', 'w') else w
         new_h = int(w * (1 - (scale / 100))) if dimension in ('*', 'h') else h
@@ -45,8 +44,6 @@ def sub_distort(source: str, output: str = '', scale: float = -1, dimension: str
         img.resize(w, h)
         img.compression_quality = 100
         img.save(filename=output)
-        img.destroy()
-        img.close()
 
     return output
 
@@ -56,13 +53,10 @@ def sub_invert(source: str, output: str = '') -> str:
     if not output:
         output = 'inverted_' + source
 
-    with wand_semaphore:
-        img = Image(filename=source)
+    with wand_semaphore, Image(filename=source) as img:
         img.negate()
         img.compression_quality = 100
         img.save(filename=output)
-        img.destroy()
-        img.close()
 
     return output
 
@@ -100,9 +94,6 @@ def _compose_video(filename, fps, prefix):
             raise ValueError('Error generating video.')
 
 
-MIN_DISTORT = float(_config('distort_video_min_scale'))
-MAX_DISTORT = float(_config('distort_video_max_scale'))
-PHOTO_TO_GIF_FRAMES = int(_config('distort_photo_to_animation_frames'))
 RX_NUMBER = re.compile(r'\-\d{6}')
 def sub_distort_animation(filename: str, context: CallbackContext, progress_msg) -> str:
     """distorts an image into a video or a video"""
@@ -126,7 +117,7 @@ def sub_distort_animation(filename: str, context: CallbackContext, progress_msg)
         context.bot_data['edits'].append_edit(progress_msg, 'Extracting frames…')
         frames = _extract_video_frames(filename, prefix)
     else:
-        frames = [filename] * PHOTO_TO_GIF_FRAMES
+        frames = [filename] * int(_config('distort_photo_to_animation_frames'))
         fps = 30
         prefix = filename[:-4]
 
@@ -134,7 +125,9 @@ def sub_distort_animation(filename: str, context: CallbackContext, progress_msg)
     for i, frame in enumerate(frames):
         context.bot_data['edits'].append_edit(progress_msg, '%.1f%%…' % max(.4, (i / len(frames) * 100)))
         distorted.append(sub_distort(frame, distorted_name(frame, i),
-                                     scale=remap(i, 0, len(frames) - 1, MIN_DISTORT, MAX_DISTORT)))
+                                     scale=remap(i, 0, len(frames) - 1,
+                                     float(_config('distort_video_min_scale')),
+                                     float(_config('distort_video_max_scale')))))
 
     context.bot_data['edits'].append_edit(progress_msg, '99.' + '9' * random.randint(1, 9) + '%…')
     _compose_video(filename, fps, prefix)
@@ -161,7 +154,7 @@ STICKER_SIZE = 512
 def sub_distort_animated_sticker(filename: str, scale: int) -> str:
     def dict_distort(input_):
         def distort(n):
-            return clamp(round(n + n * random.uniform(-scale, scale), 1), -512, 512)
+            return clamp(round(n + n * random.uniform(-scale, scale), 1), -STICKER_SIZE, STICKER_SIZE)
         if isinstance(input_, dict):
             return {x: distort(y) if isinstance(y, float) else dict_distort(y) for x, y in input_.items()}
         if isinstance(input_, list):

@@ -21,7 +21,7 @@ def get_soyjak() -> str:
 
 
 def cron_soyjak(context: CallbackContext) -> None:
-    if not _config('4chan_cron_chat_id'):
+    if not _config('soyjak_cron_chat_id'):
         return
 
     hour = datetime.datetime.now().astimezone().hour
@@ -31,9 +31,9 @@ def cron_soyjak(context: CallbackContext) -> None:
     try:
         image_url = get_soyjak()
         if image_url.endswith('.gif'):
-            context.bot.send_animation(int(_config('4chan_cron_chat_id')), image_url)
+            context.bot.send_animation(int(_config('soyjak_cron_chat_id')), image_url)
         else:
-            context.bot.send_photo(int(_config('4chan_cron_chat_id')), image_url)
+            context.bot.send_photo(int(_config('soyjak_cron_chat_id')), image_url)
     except:
         logger.exception('failed to send bihourly soyjak')
 

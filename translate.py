@@ -35,8 +35,8 @@ def sub_translate(text, languages):
 RX_MULTI_LANG = re.compile(r'^([a-z]{2})\-([a-z]{2})(\s|$)', re.IGNORECASE)
 RX_SINGLE_LANG = re.compile(r'^([a-z]{2})(\s|$)', re.IGNORECASE)
 TRANSLATE_USAGE = """<b>Usage</b>
-/translate en-zh <i>Text to translate</i>
-/translate de <i>Text to translate</i> (source language is detected automatically)
+/translate en-zh <i>Text to translate</i> - Translates text from English to Chinese
+/translate de <i>Text to translate</i> (source language is detected automatically) - Translates text to German
 /translate <i>Text to translate</i> (source language is detected automatically; target defaults to <b>%s</b>)
 <i>Text to translate</i> can be omitted if you quote another message.
 
