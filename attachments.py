@@ -76,7 +76,6 @@ def download_attachment(update, context, type_: AttachmentType=None):
                 return None
             filename = _download_anything(message, context)
             if filename.endswith('.webp'):
-                filename = _download_anything(message, context)
                 img = Image(filename=filename)
                 img.compression_quality = 100
                 img.save(filename=filename + '.jpg')
