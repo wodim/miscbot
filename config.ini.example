@@ -7,9 +7,9 @@ chat_relay_delete_channel =
 chat_relay_history_max_minutes = 10
 chat_relay_history_max_count = 5
 ; all languages available to be used in /translate
-translate_all_languages = mr, ha, de, hmn, ig, mk, cy, af, hu, gd, da, sn, ur, ja, tk
+translate_all_languages = he, mr, ha, de, ig, mk, cy, af, hu, gd, da, sn, ur, ja, tk, la, be, is, ka, el, hy, ny, mg, mt, ky, pt, tr, co, pa, mn, jw, eu, id, sw, cs, et, hi, th, zu, iw, ug, sl, yi, ru, sm, ku, st, ko, bg, su, fr, ne, ps, hr, gu, fa, ca, it, ht, xh, zh, lo, ga, no, yo, te, sk, fi, ms, uz, sd, rw, vi, nl, so, sq, bs, fy, my, or, pl, eo, lb, uk, en, kk, si, ta, ar, mi, ml, tg, kn, sr, am, ro, lt, lv, gl, az, km, bn, tl, tt, sv, es
 ; of those languages, which ones does the scrambler use
-translate_scrambler_languages = ja, he, zh, hi, fi, ru, el
+translate_scrambler_languages = he, mr, ha, de, hmn, ig, mk, cy, af, hu, gd, da, sn, ur, ja, tk, la, be, is, ka, el, hy, ny, mg, mt, ky, pt, tr, haw, co, pa, mn, jw, eu, id, sw, cs, et, hi, zh-TW, th, zu, iw, ug, sl, yi, ru, sm, ku, st, ko, bg, su, fr, ceb, ne, ps, hr, gu, fa, ca, it, ht, xh, zh-CN, lo, ga, no, yo, te, sk, fi, ms, uz, sd, rw, vi, nl, so, sq, bs, fy, my, or, pl, eo, lb, uk, en, kk, si, ta, ar, mi, ml, tg, kn, sr, am, ro, lt, lv, gl, az, km, bn, tl, tt, sv
 ; how many languages do scrambled messages go through
 translate_scrambler_count = 12
 ; this is the default output language used by the translator
@@ -71,3 +71,9 @@ twitter_consumer_key =
 twitter_consumer_secret =
 twitter_access_token =
 twitter_access_token_secret =
+; this is the negative prompt that will be used with all image generators that support one
+negative_prompt = low quality
+; blazing craiyon configuration
+blazing_craiyon_chat_id = -123123123123
+blazing_craiyon_threads = 8
+blazing_scrambler_count = 18

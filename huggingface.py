@@ -11,7 +11,7 @@ from wand.image import Image
 import websocket
 
 from attachments import AttachmentType, download_attachment
-from utils import (create_gallery, get_command_args, get_random_string, image_from_b64, image_to_b64,
+from utils import (create_gallery, get_command_args, get_url, get_random_string, image_from_b64, image_to_b64,
                    is_admin, logger, requests_session)
 
 
@@ -36,8 +36,7 @@ class HuggingFace:
     def name(self):
         if self.data['times'] == 1:
             return self.data['name']
-        else:
-            return f'{self.data["name"]} ({self.progress}/{self.data["times"]})'
+        return f'{self.data["name"]} ({self.progress}/{self.data["times"]})'
 
 
 class HuggingFaceWS(HuggingFace):
@@ -139,12 +138,11 @@ class HuggingFacePush(HuggingFace):
                     if self.data['out_format'] == HuggingFaceFormat.PHOTO:
                         self.results = r['data']['data'][0]
                         break
-                    elif self.data['out_format'] == HuggingFaceFormat.TEXT:
+                    if self.data['out_format'] == HuggingFaceFormat.TEXT:
                         self.results = r['data']['data'][0]
                         break
-                    else:
-                        # TODO more formats
-                        return
+                    # TODO more formats
+                    raise ValueError('unknown output format')
                 elif r['status'] == 'PENDING':
                     logger.info('%s: pending', self.name)
                     self.edits.append_edit(self.progress_msg, (f'{self.name}: pending…'))
@@ -210,7 +208,11 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
         if data['out_format'] == HuggingFaceFormat.PHOTO:
             result = image_from_b64(result)
         elif data['out_format'] == [HuggingFaceFormat.PHOTO]:
-            result = [image_from_b64(x) for x in result]
+            if isinstance(result[0], list) and result[0].get('is_file'):
+                # TODO actually implement this
+                result = [get_url(f'https://{data["space"]}.hf.space/file={path}') for path in result['images']]
+            else:
+                result = [image_from_b64(x) for x in result]
         elif data['out_format'] == HuggingFaceFormat.TEXT:
             pass
         else:

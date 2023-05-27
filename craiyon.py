@@ -4,7 +4,29 @@ from telegram import Update
 from telegram.ext import CallbackContext
 from wand.image import Image
 
-from utils import create_gallery, logger, get_command_args, get_url, image_from_b64, requests_session
+from utils import _config, create_gallery, logger, get_command_args, get_url, image_from_b64, requests_session
+
+
+def get_craiyon(prompt: str) -> Image:
+    while True:
+        r = requests_session.post('https://api.craiyon.com/v3', json={
+            'prompt': prompt,
+            'negative_prompt': _config('negative_prompt'),
+            'model': 'none',
+            'version': '35s5hfwn9n78gb06',
+            'token': None,
+        })
+        if r.ok:
+            json = r.json()
+            try:
+                images = create_gallery([Image(blob=get_url(f'https://img.craiyon.com/{path}')) for path in json['images']])
+            except Exception as exc:
+                logger.info('craiyon: error loading images: %s', exc)
+                continue
+            next_prompt = json['next_prompt'] if not json['next_prompt'].startswith('Sorry,') else None
+            return images, next_prompt
+        logger.info('craiyon request failed: "%s". retrying...', r.text)
+        sleep(1)
 
 
 def command_craiyon(update: Update, _: CallbackContext) -> None:
@@ -19,22 +41,8 @@ def command_craiyon(update: Update, _: CallbackContext) -> None:
         quote=False
     )
 
-    while True:
-        r = requests_session.post('https://api.craiyon.com/v3', json={
-            'prompt': prompt,
-            'negative_prompt': 'low quality',
-            'model': 'none',
-            'version': '35s5hfwn9n78gb06',
-            'token': None,
-        })
-        if r.ok:
-            json = r.json()
-            images = [Image(blob=get_url(f'https://img.craiyon.com/{path}')) for path in json['images']]
-            next_prompt = json['next_prompt'] if not json['next_prompt'].startswith('Sorry,') else None
-            update.message.reply_photo(create_gallery(images), caption=f'Suggestion:\n{next_prompt}')
-            break
-        logger.info('craiyon request failed: "%s". retrying...', r.text)
-        sleep(1)
+    gallery, next_prompt = get_craiyon(prompt)
+    update.message.reply_photo(gallery, caption=f'Suggestion:\n{next_prompt}' if next_prompt else None)
 
     progress_msg.delete()
 

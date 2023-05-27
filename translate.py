@@ -12,24 +12,28 @@ from utils import (_config, clean_up, ellipsis, get_command_args,
                    get_random_string, logger, remove_command)
 
 
-def sub_translate(text, languages):
+def sub_translate(text, languages) -> tuple[str, list[tuple[str, str]]]:
     """translate, or else"""
+    if not os.path.exists('translate-ng'):
+        raise RuntimeError("can't translate: helper program does not exist")
+
     for _ in range(int(_config('translate_retries'))):
         logger.info('Translating %s "%s"', '->'.join(languages), ellipsis(text, 6))
+        filename = 'translate_tmp_' + get_random_string(16) + '.txt'
         try:
-            if os.path.exists('translate-ng'):
-                filename = 'translate_tmp_' + get_random_string(16) + '.txt'
-                with open(filename, 'wt', newline='', encoding='utf8') as fp:
-                    print(clean_up(text), file=fp)
-                subprocess.call(['./translate-ng', filename, ','.join(languages)])
-                with open(filename, 'rt', newline='', encoding='utf8') as fp:
-                    results = fp.read().split('__TRANSLATE_NG_SENTINEL__')[:-1]
-                it = iter(results)
-                os.remove(filename)
-                return results[-2], list(zip(it, it))
-            raise RuntimeError("can't translate: helper program does not exist")
+            with open(filename, 'wt', newline='', encoding='utf8') as fp:
+                print(clean_up(text), file=fp)
         except:
-            pass
+            raise RuntimeError("can't translate: can't write input file")
+        subprocess.call(['./translate-ng', filename, ','.join(languages)])
+        try:
+            with open(filename, 'rt', newline='', encoding='utf8') as fp:
+                results = fp.read().split('__TRANSLATE_NG_SENTINEL__')[:-1]
+        except:
+            raise RuntimeError("can't translate: can't read input file")
+        it = iter(results)
+        os.remove(filename)
+        return results[-2], list(zip(it, it))
 
 
 RX_MULTI_LANG = re.compile(r'^([a-z]{2})\-([a-z]{2})(\s|$)', re.IGNORECASE)
@@ -99,17 +103,18 @@ def command_translate(update: Update, context: CallbackContext) -> None:
     update.message.reply_text(ellipsis(translation, MAX_MESSAGE_LENGTH), disable_web_page_preview=True)
 
 
-def get_scramble_languages() -> list[str]:
+def get_scramble_languages(count=None) -> list[str]:
     """returns a random list of languages to be used by the translator to
     scramble text"""
     languages = [x.strip() for x in _config('translate_scrambler_languages').split(',')]
     random.shuffle(languages)
+    count = count or int(_config('translate_scrambler_count'))
     return (['auto'] +
-            languages[:int(_config('translate_scrambler_count'))] +
+            languages[:count] +
             [_config('translate_default_language')])
 
 
 def sub_scramble(text) -> None:
     """handles the /scramble command."""
     scrambled, _ = sub_translate(text, get_scramble_languages())
-    return ellipsis(scrambled, MAX_MESSAGE_LENGTH)
+    return scrambled

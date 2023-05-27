@@ -19,7 +19,7 @@ from _4chan import cron_4chan, command_thread
 from calc import command_calc
 from craiyon import command_craiyon, command_dalle
 from distort import (command_photo, command_distort, command_distort_caption,
-                     command_invert, command_voice)
+                     command_invert, command_voice, command_wtf)
 from huggingface import HuggingFaceFormat, huggingface
 from message_history import MessageHistory
 from queues import Actions, Edits
@@ -338,7 +338,7 @@ def command_sd(update: Update, context: CallbackContext) -> None:
     huggingface(update, context, {
         'name': 'Stable Diffusion 2.1',
         'space': 'stabilityai-stable-diffusion',
-        'in_format': [HuggingFaceFormat.TEXT, 'low quality', 9],
+        'in_format': [HuggingFaceFormat.TEXT, _config('negative_prompt'), 9],
         'out_format': [HuggingFaceFormat.PHOTO],
         'fn_index': 2,
     })
@@ -364,6 +364,17 @@ def command_anime(update: Update, context: CallbackContext) -> None:
         'out_format': HuggingFaceFormat.PHOTO,
         'method': 'push',
         'multiple': True,
+    })
+
+
+def command_clip(update: Update, context: CallbackContext) -> None:
+    """figure out a prompt to generate a similar image"""
+    huggingface(update, context, {
+        'name': 'CLIP Interrogator',
+        'space': 'pharma-clip-interrogator',
+        'in_format': [HuggingFaceFormat.PHOTO, 'ViT-L (best for Stable Diffusion 1.*)', 'best'],
+        'out_format': HuggingFaceFormat.TEXT,
+        'fn_index': 3,
     })
 
 
@@ -452,6 +463,8 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('soyjak', command_soyjak, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('caption', command_caption, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('anime', command_anime, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('wtf', command_wtf, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('clip', command_clip, run_async=True), group=40)
     dispatcher.add_handler(MessageHandler(Filters.photo & ~Filters.command & Filters.chat_type.groups & Filters.chat(_config_list('auto_captions', int)),
                                           command_caption, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler([x.replace('sound/', '') for x in glob('sound/*')], command_sound, run_async=True), group=40)
@@ -495,6 +508,7 @@ if __name__ == '__main__':
         ('soyjak',       '🥛'),
         ('caption',      '🔤'),
         ('anime',        '🌸'),
+        ('wtf',          '🤔'),
     ])
 
     logger.info('Booting poller...')

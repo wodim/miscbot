@@ -9,13 +9,14 @@ import subprocess
 import threading
 
 from telegram import ChatAction, Update
+from telegram.constants import MAX_MESSAGE_LENGTH
 from telegram.error import BadRequest
 from telegram.ext import CallbackContext
 from wand.image import Image
 
 from attachments import AttachmentType, download_attachment
 from translate import sub_scramble
-from utils import _config, clamp, get_command_args, get_random_string, logger, remove_command
+from utils import _config, clamp, ellipsis, get_command_args, get_random_string, logger, remove_command
 
 
 DISTORT_FORMAT = _config('distort_temporary_format')
@@ -218,7 +219,7 @@ def command_distort(update: Update, context: CallbackContext) -> None:
         if text:
             context.bot_data['actions'].append(update.message.chat_id, ChatAction.TYPING)
             try:
-                update.message.reply_text(sub_scramble(text), disable_web_page_preview=True)
+                update.message.reply_text(ellipsis(sub_scramble(text), MAX_MESSAGE_LENGTH), disable_web_page_preview=True)
             except Exception as exc:
                 update.message.reply_text(f'Error distorting: {str(exc)}')
             finally:
@@ -398,3 +399,27 @@ def command_distort_caption(update: Update, context: CallbackContext) -> None:
     else, it does nothing."""
     if RX_COMMAND_CHECK.match(update.message.caption):
         command_distort(update, context)
+
+
+FFMPEG_WTF = ("ffmpeg -i '{source}' -i assets/wtf.mp4 "
+              "-filter_complex '[0:v]scale=w=800:h=600:force_original_aspect_ratio=2,crop=800:600[imgout];[1:v]colorkey=0x00ff01:0.35[ckout];[imgout][ckout]overlay[out]' "
+              "-map '[out]' -map 1:a -c:a copy -aspect 800/600 -y -preset veryfast '{output}'")
+def command_wtf(update: Update, context: CallbackContext) -> None:
+    """what the fuck is this piece of shit?"""
+    filename = download_attachment(update, context, AttachmentType.PHOTO)
+    if not filename:
+        update.message.reply_text('Quote a photo.')
+        return
+
+    context.bot_data['actions'].append(update.message.chat_id, ChatAction.UPLOAD_VIDEO)
+
+    output = f'{get_random_string(32)}.mp4'
+    if subprocess.call(FFMPEG_WTF.format(source=filename, output=output), shell=True) != 0:
+        update.message.reply_text('Ooops, I messed up!')
+    else:
+        update.message.reply_video(open(output, 'rb'))
+
+    os.remove(filename)
+    os.remove(output)
+
+    context.bot_data['actions'].remove(update.message.chat_id, ChatAction.UPLOAD_VIDEO)
