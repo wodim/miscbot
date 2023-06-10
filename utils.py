@@ -3,6 +3,7 @@ import configparser
 import logging
 from math import ceil, floor, sqrt
 import os
+import pprint
 import random
 import re
 import string
@@ -218,3 +219,12 @@ def create_gallery(images):
             image.close()
             image.destroy()
         return canvas.make_blob(format='jpeg')
+
+
+# this is a prettyprinter implementation that escapes non-ascii characters
+# based on https://stackoverflow.com/a/10883893
+class MyPrettyPrinter(pprint.PrettyPrinter):
+    def format(self, object, context, maxlevels, level):
+        if isinstance(object, str) and len(object) != len(object.encode()):
+            return str(object.encode('utf8')), True, False
+        return super().format(object, context, maxlevels, level)

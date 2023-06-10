@@ -33,7 +33,7 @@ from translate import command_translate
 from twitter import command_twitter, cron_twitter
 from utils import (_config, _config_list, clean_up, ellipsis,
                    get_command_args, get_relays, logger, is_admin,
-                   send_admin_message)
+                   send_admin_message, MyPrettyPrinter)
 
 
 def command_normalize(update: Update, _: CallbackContext) -> None:
@@ -90,7 +90,7 @@ def command_info(update: Update, _: CallbackContext) -> None:
     if update.message.reply_to_message:
         update.message.reply_text(
             ('<code>%s</code>' %
-             ellipsis(html.escape(pprint.pformat(update.message.reply_to_message.to_dict())), MAX_MESSAGE_LENGTH)),
+             ellipsis(html.escape(MyPrettyPrinter().pformat(update.message.reply_to_message.to_dict())), MAX_MESSAGE_LENGTH)),
             parse_mode=PARSEMODE_HTML,
             disable_web_page_preview=True
         )
