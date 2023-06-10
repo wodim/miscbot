@@ -111,8 +111,11 @@ def command_falcon_check(update: Update, context: CallbackContext) -> None:
         'name': 'Falcon',
         'space': 'huggingfaceh4-falcon-chat',
         'in_format': [HuggingFaceFormat.TEXT,
-                      previous_state[:int(_config('falcon_max_answers'))] or [],
-                      _config('falcon_instructions'), 0.1, 0.1],
+                      previous_state[:int(_config('falcon_max_answers'))]
+                          if isinstance(previous_state, list) else [],
+                      _config('falcon_instructions'),
+                      float(_config('falcon_temperature')),
+                      float(_config('falcon_p')),],
         'out_format': HuggingFaceFormat.CHATBOT,
         'fn_index': 1,
         'quiet_progress': True,

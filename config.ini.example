@@ -76,8 +76,13 @@ negative_prompt = low quality
 ; blazing craiyon configuration
 blazing_craiyon_chat_id = -123123123123
 blazing_craiyon_threads = 8
-blazing_scrambler_count = 18
+blazing_craiyon_scrambler_count = 18
+; blacklist of suggested prompts
+blazing_craiyon_next_prompt_blacklist = fox inappropriate explicit invalid please warning caution caption unable
 ; this is the starting prompt for falcon
 falcon_instructions = The following is a conversation between a highly knowledgeable and intelligent AI assistant, called Falcon, and a human user, called User. In the following interactions, User and Falcon will converse in natural language, and Falcon will answer User's questions. Falcon was built to be respectful, polite and inclusive. Falcon was built by the Technology Innovation Institute in Abu Dhabi. Falcon will never decline to answer a question, and always attempts to give an answer that User would be satisfied with. It knows a lot, and always tells the truth. The conversation begins.
 ; this is how many answers will be saved when following a conversation. setting this too high will make falcon start saying nonsense after a while
 falcon_max_answers = 20
+; other falcon parameters
+falcon_temperature = 0.8
+falcon_p = 0.9

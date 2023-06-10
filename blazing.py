@@ -25,7 +25,7 @@ def blazing_craiyon(i) -> None:
                 sys.exit(1)
 
         logger.info('blazing craiyon: scrambling "%s"', prompt)
-        scramble_languages = get_scramble_languages(int(_config('blazing_scrambler_count'))) + ['en']
+        scramble_languages = get_scramble_languages(int(_config('blazing_craiyon_scrambler_count'))) + ['en']
         try:
             prompt, _ = sub_translate(prompt, scramble_languages)
             prompt = prompt.strip('.,?! ')
@@ -50,9 +50,14 @@ def blazing_craiyon(i) -> None:
                 logger.exception("couldn't post, continuing anyway")
                 break
 
-        # only save the next prompt if we are the control thread. also, ignore prompt
-        # suggestions that include foxes, since craiyon generates those for no reason
-        if next_prompt and 'fox' not in next_prompt.lower().split(' ') and i == 0:
+        # only save the next prompt if we are the control thread
+        if next_prompt and i == 0:
+            # ignore suggestions that are in the blacklist
+            blacklist = _config('blazing_craiyon_next_prompt_blacklist').split(' ')
+            words = next_prompt.lower().split(' ')
+            if [x for x in blacklist if x in words]:
+                continue
+
             with BLAZING_CRAIYON_SEMAPHORE:
                 logger.info('storing next prompt "%s"', next_prompt)
                 try:
