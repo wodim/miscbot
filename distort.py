@@ -127,8 +127,8 @@ def sub_distort_animation(filename: str, context: CallbackContext, progress_msg)
         context.bot_data['edits'].append_edit(progress_msg, '%.1f%%…' % max(.4, (i / len(frames) * 100)))
         distorted.append(sub_distort(frame, distorted_name(frame, i),
                                      scale=remap(i, 0, len(frames) - 1,
-                                     float(_config('distort_video_min_scale')),
-                                     float(_config('distort_video_max_scale')))))
+                                                 float(_config('distort_video_min_scale')),
+                                                 float(_config('distort_video_max_scale')))))
 
     context.bot_data['edits'].append_edit(progress_msg, '99.' + '9' * random.randint(1, 9) + '%…')
     _compose_video(filename, fps, prefix)
