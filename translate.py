@@ -25,11 +25,14 @@ def sub_translate(text, languages) -> tuple[str, list[tuple[str, str]]]:
                 print(clean_up(text), file=fp)
         except:
             raise RuntimeError("can't translate: can't write input file")
-        subprocess.call(['./translate-ng', filename, ','.join(languages)])
+        if subprocess.call(['./translate-ng/translate-ng', filename, ','.join(languages)]) != 0:
+            os.remove(filename)
+            raise RuntimeError("can't translate: failed to run helper program")
         try:
             with open(filename, 'rt', newline='', encoding='utf8') as fp:
                 results = fp.read().split('__TRANSLATE_NG_SENTINEL__')[:-1]
         except:
+            os.remove(filename)
             raise RuntimeError("can't translate: can't read input file")
         it = iter(results)
         os.remove(filename)

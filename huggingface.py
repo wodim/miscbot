@@ -6,6 +6,7 @@ import socket
 import time
 
 from telegram import Update
+from telegram.constants import MAX_MESSAGE_LENGTH
 from telegram.ext import CallbackContext
 from wand.image import Image
 import websocket
@@ -20,6 +21,7 @@ class HuggingFaceFormat(Enum):
     PHOTO = auto()
     VIDEO = auto()
     ANIMATION = auto()
+    CHATBOT = auto()
 
 
 class HuggingFace:
@@ -58,7 +60,7 @@ class HuggingFaceWS(HuggingFace):
                 self.progress += 1
                 for k, v in enumerate(self.data['in_format']):
                     if isinstance(v, str) and v.startswith('data:'):
-                        # some effects increase the size of an image. don't let it go out of hand
+                        # some effects increase the size of an image. don't let it get out of hand
                         with Image(blob=image_from_b64(self.results)) as image:
                             if image.width > 1280 or image.height > 1280:
                                 image.transform(resize='1280x1280>')
@@ -89,17 +91,20 @@ class HuggingFaceWS(HuggingFace):
             if message.get('rank') and message.get('rank_eta'):
                 logger.info('%s says we are at rank %d with %d seconds left', self.name, message['rank'], message['rank_eta'])
                 time_left = f'{ceil(message["rank_eta"] / 60)} minutes' if message['rank_eta'] > 60 else f'{ceil(message["rank_eta"])} seconds'
-                if self.progress_msg:
+                if self.progress_msg and not self.data.get('quiet_progress'):
                     self.edits.append_edit(self.progress_msg, (f'{self.name}: in queue, {time_left} left…'))
             else:
-                if self.progress_msg:
+                if self.progress_msg and not self.data.get('quiet_progress'):
                     self.edits.append_edit(self.progress_msg, (f'{self.name}: in queue…'))
         elif message['msg'] == 'process_starts':
             logger.info('%s says it has started to process the prompt', self.name)
-            if self.progress_msg:
+            if self.progress_msg and not self.data.get('quiet_progress'):
                 self.edits.append_edit(self.progress_msg, (f'{self.name}: generating…'))
+        elif message['msg'] == 'process_generating':
+            if self.data['out_format'] == HuggingFaceFormat.CHATBOT and self.progress_msg:
+                self.edits.append_edit(self.progress_msg, message['output']['data'][0][-1][-1] + '…')
         elif message['msg'] == 'process_completed':
-            logger.info('%s says its done', self.name)
+            logger.info("%s says it's done", self.name)
             try:
                 self.results = message['output']['data'][0]
             except KeyError:
@@ -135,10 +140,7 @@ class HuggingFacePush(HuggingFace):
 
                 if r['status'] == 'COMPLETE':
                     logger.info('%s: complete', self.name)
-                    if self.data['out_format'] == HuggingFaceFormat.PHOTO:
-                        self.results = r['data']['data'][0]
-                        break
-                    if self.data['out_format'] == HuggingFaceFormat.TEXT:
+                    if self.data['out_format'] in (HuggingFaceFormat.PHOTO, HuggingFaceFormat.TEXT):
                         self.results = r['data']['data'][0]
                         break
                     # TODO more formats
@@ -159,7 +161,7 @@ class HuggingFacePush(HuggingFace):
                 self.progress += 1
                 for k, v in enumerate(self.data['in_format']):
                     if isinstance(v, str) and v.startswith('data:'):
-                        # some effects increase the size of an image. don't let it go out of hand
+                        # some effects increase the size of an image. don't let it get out of hand
                         with Image(blob=image_from_b64(self.results)) as image:
                             if image.width > 1280 or image.height > 1280:
                                 image.transform(resize='1280x1280>')
@@ -182,7 +184,7 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
                 data['in_format'][k] = image_to_b64(fp.read())
             os.remove(photo)
         elif v == HuggingFaceFormat.TEXT:
-            data['in_format'][k] = get_command_args(update, use_quote=True)
+            data['in_format'][k] = get_command_args(update, use_quote=data['out_format'] != HuggingFaceFormat.CHATBOT)
             if not data['in_format'][k]:
                 update.message.reply_text('This command requires text. Post or quote some.')
                 return
@@ -197,12 +199,14 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
             pass
 
     progress_msg = update.message.reply_text(
-        f'{data["name"]}: connecting…',
+        '…' if data.get('quiet_progress') else f'{data["name"]}: connecting…',
         quote=False
     )
 
     cls = HuggingFacePush if data.get('method') == 'push' else HuggingFaceWS
     result = cls(context.bot_data['edits'], progress_msg, data).run()
+
+    context.bot_data['edits'].flush_edits(progress_msg)
 
     if result:
         if data['out_format'] == HuggingFaceFormat.PHOTO:
@@ -215,6 +219,11 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
                 result = [image_from_b64(x) for x in result]
         elif data['out_format'] == HuggingFaceFormat.TEXT:
             pass
+        elif data['out_format'] == HuggingFaceFormat.CHATBOT:
+            # chatbot is sorta like TEXT, but we have to take the last data of the bunch and
+            # return the entire state back to the caller
+            conversation = result
+            result = result[-1][-1]
         else:
             raise ValueError(f'unknown output format for {data["name"]}')
 
@@ -229,9 +238,13 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
             images = [Image(blob=image) for image in result]
             update.message.reply_photo(create_gallery(images))
         elif data['out_format'] == HuggingFaceFormat.TEXT:
-            update.message.reply_text(result)
-        progress_msg.delete()
+            update.message.reply_text(result[:MAX_MESSAGE_LENGTH])
+        elif data['out_format'] == HuggingFaceFormat.CHATBOT:
+            progress_msg.edit_text(result[:MAX_MESSAGE_LENGTH])
+        if data['out_format'] != HuggingFaceFormat.CHATBOT:
+            progress_msg.delete()
     else:
         progress_msg.edit_text(f'{data["name"]}: failed.')
 
-    context.bot_data['edits'].flush_edits(progress_msg)
+    if data['out_format'] == HuggingFaceFormat.CHATBOT:
+        return conversation

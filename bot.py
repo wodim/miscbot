@@ -4,7 +4,6 @@ import html
 from inspect import getdoc
 import os
 import pprint
-import random
 import signal
 import socket
 
@@ -20,7 +19,9 @@ from calc import command_calc
 from craiyon import command_craiyon, command_dalle
 from distort import (command_photo, command_distort, command_distort_caption,
                      command_invert, command_voice, command_wtf)
-from huggingface import HuggingFaceFormat, huggingface
+from hf_spaces import (command_gfpgan, command_caption, command_sd, command_sd1,
+                       command_anime, command_clip, command_falcon_start,
+                       command_falcon_check)
 from message_history import MessageHistory
 from queues import Actions, Edits
 from relay import (command_relay_chat_photo, command_relay_text, command_relay_photo,
@@ -57,10 +58,15 @@ def command_restart(update: Update, _: CallbackContext) -> None:
         update.message.reply_animation(_config('error_animation'))
 
 
-def command_debug(update: Update, _: CallbackContext) -> None:
+def command_debug(update: Update, context: CallbackContext) -> None:
     """replies with some debug info"""
     if is_admin(update.message.from_user.id):
         update.message.reply_text(ellipsis(f'{actions.dump()}\n{edits.dump()}', MAX_MESSAGE_LENGTH))
+        if len(context.bot_data['falcon_state']):
+            chats = ', '.join((f'{chat_id}#{len(lines)}' for chat_id, lines in context.bot_data['falcon_state'].items()))
+            update.message.reply_text(ellipsis(f'There is Falcon state for the following chats: {chats}', MAX_MESSAGE_LENGTH))
+        else:
+            update.message.reply_text('There is no Falcon state saved for any chats.')
     else:
         update.message.reply_animation(_config('error_animation'))
 
@@ -177,7 +183,8 @@ def command_config(update: Update, context: CallbackContext) -> None:
             '4chan_cron_chat_id muted_groups '
             'ipgeolocation_io_api_key soyjak_cron_chat_id twitter_feeds '
             'twitter_consumer_key twitter_consumer_secret '
-            'twitter_access_token twitter_access_token_secret'
+            'twitter_access_token twitter_access_token_secret '
+            'blazing_craiyon_chat_id'
         ).split(' ')
         should_show = lambda k: not is_secret(k) or (is_secret(k) and is_admin_chat)
         return '<strong>%s = </strong>%s' % (
@@ -248,7 +255,7 @@ def command_ip(update: Update, _: CallbackContext) -> None:
     if text := get_command_args(update):
         def uniq(keys):
             things = {r.get(x): None for x in keys if r.get(x)}
-            return  ', '.join(things.keys()) if things != {None: None} else None
+            return ', '.join(things.keys()) if things != {None: None} else None
 
         api_key = _config('ipgeolocation_io_api_key')
         try:
@@ -309,75 +316,6 @@ def command_contact(update: Update, _: CallbackContext) -> None:
         update.message.reply_text(CONTACT_HELP)
 
 
-def command_gfpgan(update: Update, context: CallbackContext) -> None:
-    """requests an upscaled image from GFPGAN"""
-    huggingface(update, context, {
-        'name': 'GFPGAN',
-        'space': 'vicalloy-gfpgan',
-        'in_format': [HuggingFaceFormat.PHOTO, 'v1.4', '4', 0],
-        'out_format': HuggingFaceFormat.PHOTO,
-        'hash_on_open': True,
-        'fn_index': 1,
-        'multiple': True,
-    })
-
-
-def command_caption(update: Update, context: CallbackContext) -> None:
-    """takes an image and tells you what it is"""
-    huggingface(update, context, {
-        'name': 'Caption',
-        'space': 'srddev-image-caption',
-        'in_format': [HuggingFaceFormat.PHOTO],
-        'out_format': HuggingFaceFormat.TEXT,
-        'method': 'push',
-    })
-
-
-def command_sd(update: Update, context: CallbackContext) -> None:
-    """requests images for a specific prompt from stable diffusion 2.1"""
-    huggingface(update, context, {
-        'name': 'Stable Diffusion 2.1',
-        'space': 'stabilityai-stable-diffusion',
-        'in_format': [HuggingFaceFormat.TEXT, _config('negative_prompt'), 9],
-        'out_format': [HuggingFaceFormat.PHOTO],
-        'fn_index': 2,
-    })
-
-
-def command_sd1(update: Update, context: CallbackContext) -> None:
-    """requests images for a specific prompt from stable diffusion"""
-    huggingface(update, context, {
-        'name': 'Stable Diffusion 1',
-        'space': 'stabilityai-stable-diffusion-1',
-        'in_format': [HuggingFaceFormat.TEXT, 4, 50, 9, random.randint(0, 2147483647)],
-        'out_format': [HuggingFaceFormat.PHOTO],
-        'fn_index': 2,
-    })
-
-
-def command_anime(update: Update, context: CallbackContext) -> None:
-    """turns a photo into an anime drawing using AnimeGANv2"""
-    huggingface(update, context, {
-        'name': 'AnimeGANv2',
-        'space': 'akhaliq-animeganv2',
-        'in_format': [HuggingFaceFormat.PHOTO, 'version 2 (🔺 robustness,🔻 stylization)'],
-        'out_format': HuggingFaceFormat.PHOTO,
-        'method': 'push',
-        'multiple': True,
-    })
-
-
-def command_clip(update: Update, context: CallbackContext) -> None:
-    """figure out a prompt to generate a similar image"""
-    huggingface(update, context, {
-        'name': 'CLIP Interrogator',
-        'space': 'pharma-clip-interrogator',
-        'in_format': [HuggingFaceFormat.PHOTO, 'ViT-L (best for Stable Diffusion 1.*)', 'best'],
-        'out_format': HuggingFaceFormat.TEXT,
-        'fn_index': 3,
-    })
-
-
 if __name__ == '__main__':
     logger.info('Hello!!!')
     # connection pool size is workers + updater + dispatcher + job queue + main thread
@@ -401,6 +339,7 @@ if __name__ == '__main__':
         'edits': edits,
         'me': bot.get_me(),
         'last_tweet_ids': {},
+        'falcon_state': {},
     })
 
     logger.info('Adding handlers...')
@@ -465,17 +404,22 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('anime', command_anime, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('wtf', command_wtf, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('clip', command_clip, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('falcon', command_falcon_start, run_async=True), group=40)
     dispatcher.add_handler(MessageHandler(Filters.photo & ~Filters.command & Filters.chat_type.groups & Filters.chat(_config_list('auto_captions', int)),
                                           command_caption, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler([x.replace('sound/', '') for x in glob('sound/*')], command_sound, run_async=True), group=40)
+
+    # responses in private
+    dispatcher.add_handler(MessageHandler(~Filters.command & Filters.chat_type.private, command_distort, run_async=True), group=40)
+    dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_unhandled, run_async=True), group=40)
     # CommandHandlers don't work on captions, so all photos with a caption are sent to a
     # fun that will check for the command and then run command_distort if necessary
     dispatcher.add_handler(MessageHandler(Filters.caption & Filters.chat_type.group,
                                           command_distort_caption, run_async=True), group=41)
 
-    # responses in private
-    dispatcher.add_handler(MessageHandler(~Filters.command & Filters.chat_type.private, command_distort, run_async=True), group=40)
-    dispatcher.add_handler(MessageHandler(Filters.chat_type.private, command_unhandled, run_async=True), group=40)
+    # this one checks all messages to see if they are falcon conversations
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.update.message & (Filters.chat_type.private | Filters.reply),
+                                          command_falcon_check, run_async=True), group=42)
 
     logger.info('Adding jobs to the queue...')
 
@@ -509,6 +453,7 @@ if __name__ == '__main__':
         ('caption',      '🔤'),
         ('anime',        '🌸'),
         ('wtf',          '🤔'),
+        ('falcon',       '🤖'),
     ])
 
     logger.info('Booting poller...')

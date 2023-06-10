@@ -13,7 +13,7 @@
 /import.py
 /*.json
 /parser.py
-/translate-ng
+/translate-ng/translate-ng
 /chat-*.txt
 /triggers.txt
 /translate_tmp_*.txt

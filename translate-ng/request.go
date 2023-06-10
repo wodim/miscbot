@@ -22,8 +22,6 @@ type channelMessage struct {
 	Message string
 }
 
-const proxyErrorSentinel = "_proxy_error_sentinel_"
-
 func makeRequest(ctx context.Context, r translationRequest, resultsChan chan<- channelMessage, lineID int) {
 	var proxyErrorCount int
 	for {

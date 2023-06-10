@@ -215,6 +215,11 @@ def command_distort(update: Update, context: CallbackContext) -> None:
         elif filename.endswith('.tgs'):
             command_distort_animated_sticker(update, context, filename, text)
     else:
+        if update.message.chat.type == 'private' and update.message.chat.id in context.bot_data['falcon_state']:
+            if update.message.text == '/distort' and not update.message.reply_to_message:
+                del context.bot_data['falcon_state'][update.message.chat.id]
+                update.message.reply_text('Automatically distorting all incoming text. To start a new conversation, use /falcon again.')
+            return
         text = get_command_args(update, use_quote=update.message.text.startswith('/distort'))
         if text:
             context.bot_data['actions'].append(update.message.chat_id, ChatAction.TYPING)
@@ -226,7 +231,6 @@ def command_distort(update: Update, context: CallbackContext) -> None:
                 context.bot_data['actions'].remove(update.message.chat_id, ChatAction.TYPING)
         else:
             update.message.reply_text('Nothing to distort. Upload or quote text, a photo, video, GIF, sticker, audio, or voice or video note.')
-            return
 
 
 def command_invert(update: Update, context: CallbackContext) -> None:

@@ -7,12 +7,12 @@ from wand.image import Image
 from utils import _config, create_gallery, logger, get_command_args, get_url, image_from_b64, requests_session
 
 
-def get_craiyon(prompt: str) -> Image:
+def get_craiyon(prompt: str, model: str = 'none') -> Image:
     while True:
         r = requests_session.post('https://api.craiyon.com/v3', json={
             'prompt': prompt,
             'negative_prompt': _config('negative_prompt'),
-            'model': 'none',
+            'model': model,
             'version': '35s5hfwn9n78gb06',
             'token': None,
         })
@@ -36,12 +36,17 @@ def command_craiyon(update: Update, _: CallbackContext) -> None:
         update.message.reply_text('Must specify or quote a prompt.')
         return
 
-    progress_msg = update.message.reply_text(
-        f'Asking Craiyon to generate images for prompt "{prompt[:4000]}"…',
-        quote=False
-    )
+    model = 'none'
+    message = f'Asking Craiyon to generate images for prompt "{prompt[:4000]}"…'
+    for arg in ('art', 'drawing', 'photo'):
+        if f'+{arg}' in prompt:
+            model = arg
+            prompt = prompt.replace(f'+{arg}', '').strip()
+            message = f'Asking Craiyon to generate images for prompt "{prompt[:4000]}" using model "{arg}"…'
 
-    gallery, next_prompt = get_craiyon(prompt)
+    progress_msg = update.message.reply_text(message, quote=False)
+
+    gallery, next_prompt = get_craiyon(prompt, model)
     update.message.reply_photo(gallery, caption=f'Suggestion:\n{next_prompt}' if next_prompt else None)
 
     progress_msg.delete()

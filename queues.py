@@ -1,3 +1,4 @@
+from telegram.constants import MAX_MESSAGE_LENGTH
 from telegram.error import BadRequest
 
 
@@ -103,7 +104,7 @@ class Edits:
             try:
                 if (message not in self.last_edit or
                         message in self.last_edit and self.last_edit[message] != text):
-                    message.edit_text(text)
+                    message.edit_text(text[:MAX_MESSAGE_LENGTH])
                 self.last_edit[message] = text
             except BadRequest:
                 # this message was deleted

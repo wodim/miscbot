@@ -1,7 +1,8 @@
 import threading
 import time
+import sys
 
-from telegram import Bot
+import telegram
 
 from craiyon import get_craiyon
 from translate import get_scramble_languages, sub_translate
@@ -14,7 +15,6 @@ def blazing_craiyon(i) -> None:
     logger.info('launching thread %d, which will wait %d seconds to begin', i, delay)
     time.sleep(delay)
     while True:
-        logger.info('running thread %d', i)
         # it's a bit lame to write and read from a file constantly but we don't know when the bot may crash
         with BLAZING_CRAIYON_SEMAPHORE:
             try:
@@ -22,27 +22,48 @@ def blazing_craiyon(i) -> None:
                     prompt = fp.read().strip()
             except Exception as exc:
                 logger.info("can't launch blazing craiyon: %s", exc)
-                return
+                sys.exit(1)
 
         logger.info('blazing craiyon: scrambling "%s"', prompt)
         scramble_languages = get_scramble_languages(int(_config('blazing_scrambler_count'))) + ['en']
-        prompt, _ = sub_translate(prompt, scramble_languages)
-        prompt = prompt.strip('.,?! ')
+        try:
+            prompt, _ = sub_translate(prompt, scramble_languages)
+            prompt = prompt.strip('.,?! ')
+        except Exception as exc:
+            logger.exception("couldn't scramble, so keeping the prompt as it is")
 
-        logger.info('blazing craiyon: requesting "%s"', prompt)
-        gallery, next_prompt = get_craiyon(prompt)
-        bot.send_photo(int(_config('blazing_craiyon_chat_id')), gallery, caption=prompt)
+        logger.info('requesting "%s"', prompt)
+        try:
+            gallery, next_prompt = get_craiyon(prompt)
+        except Exception as exc:
+            logger.exception("couldn't request images or generate a gallery with them, trying something else")
+            continue
 
-        if next_prompt and i == 0:
-            # only worry aobut the next prompt if we are the control thread
+        while True:
+            try:
+                bot.send_photo(int(_config('blazing_craiyon_chat_id')), gallery, caption=prompt)
+                break
+            except telegram.error.RetryAfter as exc:
+                logger.info(str(exc))
+                time.sleep(exc.retry_after + 1)
+            except Exception as exc:
+                logger.exception("couldn't post, continuing anyway")
+                break
+
+        # only save the next prompt if we are the control thread. also, ignore prompt
+        # suggestions that include foxes, since craiyon generates those for no reason
+        if next_prompt and 'fox' not in next_prompt.lower().split(' ') and i == 0:
             with BLAZING_CRAIYON_SEMAPHORE:
-                logger.info('blazing craiyon: storing next prompt "%s"', next_prompt)
-                with open('blazing_craiyon_prompt.txt', 'wt', encoding='utf8') as fp:
-                    fp.write(next_prompt)
+                logger.info('storing next prompt "%s"', next_prompt)
+                try:
+                    with open('blazing_craiyon_prompt.txt', 'wt', encoding='utf8') as fp:
+                        fp.write(next_prompt)
+                except Exception as exc:
+                    logger.exception("couldn't save current prompt")
 
 
 if __name__ == '__main__':
-    bot = Bot(_config('token'))
+    bot = telegram.Bot(_config('token'))
 
     for i in range(int(_config('blazing_craiyon_threads'))):
         thread = threading.Thread(target=blazing_craiyon, args=(i,))
