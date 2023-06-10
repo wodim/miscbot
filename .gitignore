@@ -5,7 +5,7 @@
 /*.webp
 /*.webm
 /*.tgs
-/trolldb.txt
+/assets/trolldb.txt
 /proxies.txt
 /templates
 /log.pickle
@@ -19,6 +19,6 @@
 /translate_tmp_*.txt
 /trainer_*.py
 /sound
-/noreply.txt
+/assets/noreply.txt
 /tmp_*
 /blazing_craiyon_prompt.txt

@@ -14,7 +14,7 @@ def clean_fortune(fortune: str) -> str:
 
 def get_fortune() -> str:
     """gets a fortune at random and cleans it"""
-    with open('trolldb.txt', 'rt', encoding='utf8') as fp:
+    with open('assets/trolldb.txt', 'rt', encoding='utf8') as fp:
         fortunes = fp.read().split('%')[:-1]
     fortune = clean_fortune(random.choice(fortunes))
     return fortune
@@ -23,7 +23,7 @@ def get_fortune() -> str:
 def search_fortunes(criteria: str) -> str:
     """searches the fortune database for fortunes that match the criteria and
     returns them and then None if there are more results"""
-    with open('trolldb.txt', 'rt', encoding='utf8') as fp:
+    with open('assets/trolldb.txt', 'rt', encoding='utf8') as fp:
         fortunes = fp.read().split('%')[:-1]
     results = 0
     for fortune in fortunes:
@@ -54,24 +54,24 @@ def command_fortune(update: Update, context: CallbackContext) -> None:
 
 def command_tip(update: Update, _: CallbackContext) -> None:
     """gives you a useful tip"""
-    update.message.reply_text(get_random_line('tips.txt'),
+    update.message.reply_text(get_random_line('assets/tips.txt'),
                               disable_web_page_preview=True, quote=False)
 
 
 def command_oiga(update: Update, _: CallbackContext) -> None:
     """oiga oiga oiga oiga"""
-    update.message.reply_text(get_random_line('oiga.txt'),
+    update.message.reply_text(get_random_line('assets/oiga.txt'),
                               disable_web_page_preview=True, quote=False)
 
 
 def command_imp(update: Update, _: CallbackContext) -> None:
     """let the imp in a ball tell you your fortune"""
-    update.message.reply_text(get_random_line('imp.txt'),
+    update.message.reply_text(get_random_line('assets/imp.txt'),
                               disable_web_page_preview=True, quote=False)
 
 
 def command_haiku(update: Update, _: CallbackContext) -> None:
     """sends a haiku"""
-    update.message.reply_text(get_random_line('haiku5.txt') +
-                              get_random_line('haiku7.txt') +
-                              get_random_line('haiku5.txt'), quote=False)
+    update.message.reply_text(get_random_line('assets/haiku5.txt') +
+                              get_random_line('assets/haiku7.txt') +
+                              get_random_line('assets/haiku5.txt'), quote=False)
