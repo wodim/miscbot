@@ -217,13 +217,9 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
                 result = [get_url(f'https://{data["space"]}.hf.space/file={path}') for path in result['images']]
             else:
                 result = [image_from_b64(x) for x in result]
-        elif data['out_format'] == HuggingFaceFormat.TEXT:
+        elif data['out_format'] in (HuggingFaceFormat.TEXT, HuggingFaceFormat.CHATBOT):
+            # these don't require any additional processing
             pass
-        elif data['out_format'] == HuggingFaceFormat.CHATBOT:
-            # chatbot is sorta like TEXT, but we have to take the last data of the bunch and
-            # return the entire state back to the caller
-            conversation = result
-            result = result[-1][-1]
         else:
             raise ValueError(f'unknown output format for {data["name"]}')
 
@@ -240,11 +236,10 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
         elif data['out_format'] == HuggingFaceFormat.TEXT:
             update.message.reply_text(result[:MAX_MESSAGE_LENGTH])
         elif data['out_format'] == HuggingFaceFormat.CHATBOT:
-            progress_msg.edit_text(result[:MAX_MESSAGE_LENGTH])
+            progress_msg.edit_text(result[-1][-1][:MAX_MESSAGE_LENGTH])
         if data['out_format'] != HuggingFaceFormat.CHATBOT:
             progress_msg.delete()
     else:
         progress_msg.edit_text(f'{data["name"]}: failed.')
 
-    if data['out_format'] == HuggingFaceFormat.CHATBOT:
-        return conversation
+    return result

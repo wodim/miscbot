@@ -125,5 +125,6 @@ def command_falcon_check(update: Update, context: CallbackContext) -> None:
     # handler. this is done to avoid saving the old state if /falcon is used while
     # we were generating a response in this chat id, but it won't work if /falcon is
     # used to interrupt the first answer. still it's better than nothing.
-    if previous_state == context.bot_data['falcon_state'].get(update.message.chat.id):
+    # also, don't save if falcon failed.
+    if conversation and previous_state == context.bot_data['falcon_state'].get(update.message.chat.id):
         context.bot_data['falcon_state'][update.message.chat.id] = conversation
