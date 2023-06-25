@@ -184,7 +184,7 @@ def command_config(update: Update, context: CallbackContext) -> None:
             'ipgeolocation_io_api_key soyjak_cron_chat_id twitter_feeds '
             'twitter_consumer_key twitter_consumer_secret '
             'twitter_access_token twitter_access_token_secret '
-            'blazing_craiyon_chat_id'
+            'blazing_craiyon_chat_id blazing_craiyon_tokens'
         ).split(' ')
         should_show = lambda k: not is_secret(k) or (is_secret(k) and is_admin_chat)
         return '<strong>%s = </strong>%s' % (
