@@ -193,16 +193,25 @@ def command_config(update: Update, context: CallbackContext) -> None:
     if context.args:
         k = context.args[0].lower()
         if v := _config(k):
-            update.message.reply_text(format_config_key(k, v),
+            update.message.reply_text(ellipsis(format_config_key(k, v), MAX_MESSAGE_LENGTH),
                                       quote=False, parse_mode=PARSEMODE_HTML,
                                       disable_web_page_preview=True)
         else:
             update.message.reply_text('No such key.')
     else:
-        update.message.reply_text('\n'.join([
-                format_config_key(k, v) for k, v in sorted(_config())
-            ]), quote=False, parse_mode=PARSEMODE_HTML, disable_web_page_preview=True)
-
+        lines = iter([format_config_key(k, v) for k, v in sorted(_config())])
+        buffer, current = [], next(lines)
+        for line in lines:
+            if len(current) + 1 + len(line) > MAX_MESSAGE_LENGTH:
+                buffer.append(current[:MAX_MESSAGE_LENGTH])
+                current = line
+            else:
+                current += '\n' + line
+        buffer.append(current[:MAX_MESSAGE_LENGTH])
+        for chunk in buffer:
+            update.message.reply_text(ellipsis(chunk, MAX_MESSAGE_LENGTH),
+                                               quote=False, parse_mode=PARSEMODE_HTML,
+                                               disable_web_page_preview=True)
 
 def command_leave(update: Update, context: CallbackContext) -> None:
     """leaves a chat"""
