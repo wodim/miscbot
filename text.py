@@ -12,21 +12,21 @@ def clean_fortune(fortune: str) -> str:
     return fortune.replace(' \n', ' ').replace('  ', '\n').strip()
 
 
+def get_all_fortunes() -> list[str]:
+    with open('assets/trolldb.txt', 'rt', encoding='utf8') as fp:
+        return fp.read().split('\n%\n')[:-1]
+
+
 def get_fortune() -> str:
     """gets a fortune at random and cleans it"""
-    with open('assets/trolldb.txt', 'rt', encoding='utf8') as fp:
-        fortunes = fp.read().split('%')[:-1]
-    fortune = clean_fortune(random.choice(fortunes))
-    return fortune
+    return clean_fortune(random.choice(get_all_fortunes()))
 
 
 def search_fortunes(criteria: str) -> str:
     """searches the fortune database for fortunes that match the criteria and
     returns them and then None if there are more results"""
-    with open('assets/trolldb.txt', 'rt', encoding='utf8') as fp:
-        fortunes = fp.read().split('%')[:-1]
     results = 0
-    for fortune in fortunes:
+    for fortune in get_all_fortunes():
         clean = clean_fortune(fortune)
         if criteria.lower() in clean.lower():
             results += 1
