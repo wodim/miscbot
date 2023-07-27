@@ -104,10 +104,11 @@ class Edits:
             try:
                 if (message not in self.last_edit or
                         message in self.last_edit and self.last_edit[message] != text):
-                    message.edit_text(text[:MAX_MESSAGE_LENGTH])
+                    parse_mode = getattr(message, 'parse_mode', None)
+                    message.edit_text(text[:MAX_MESSAGE_LENGTH], parse_mode=parse_mode)
                 self.last_edit[message] = text
             except BadRequest:
-                # this message was deleted
+                # this message was deleted or the parser crapped out (illegal html/markdown)
                 self.flush_edits(message)
             except:
                 # generally fails because of ratelimits
