@@ -1,12 +1,14 @@
 from enum import Enum, auto
+import html
 import json
 from math import ceil
 import os
 import socket
 import time
 
+from bs4 import BeautifulSoup
 from telegram import Update
-from telegram.constants import MAX_MESSAGE_LENGTH
+from telegram.constants import MAX_MESSAGE_LENGTH, PARSEMODE_HTML
 from telegram.ext import CallbackContext
 from wand.image import Image
 import websocket
@@ -31,7 +33,7 @@ class HuggingFace:
         self.data = data
         self.data['fn_index'] = self.data.get('fn_index') or 0
         self.results = None
-        self.hash = None
+        self.hash = self.data.get('hash') or get_random_string(11)
         self.progress = 1
 
     @property
@@ -40,12 +42,24 @@ class HuggingFace:
             return self.data['name']
         return f'{self.data["name"]} ({self.progress}/{self.data["times"]})'
 
+    @staticmethod
+    def chatbot_parse_html(s: str) -> str:
+        s = s.replace('<br>', '\n')
+        ret = ''
+        for node in BeautifulSoup(s, 'lxml').body.children:
+            if node.name == 'pre' or node.name == 'code':
+                ret += f'<code>{html.escape(node.text.replace("&lowbar;", "_"))}</code>'
+            elif node.name == 'p':
+                ret += html.escape(node.text) + '\n'
+            else:
+                ret += html.escape(node.text)
+        return ret.strip()
+
 
 class HuggingFaceWS(HuggingFace):
     def run(self):
         for _ in range(self.data['times']):
             while True:
-                self.hash = get_random_string(11)
                 ws = websocket.WebSocketApp(f'wss://{self.data["space"]}.hf.space/queue/join',
                                             on_message=self.on_message, on_open=self.on_open, on_close=self.on_close)
                 ws.run_forever(origin=f'https://{self.data["space"]}.hf.space', sockopt=((socket.IPPROTO_TCP, socket.TCP_NODELAY, 1),))
@@ -102,12 +116,13 @@ class HuggingFaceWS(HuggingFace):
                 self.edits.append_edit(self.progress_msg, (f'{self.name}: generating…'))
         elif message['msg'] == 'process_generating':
             if self.data['out_format'] == HuggingFaceFormat.CHATBOT and self.progress_msg:
-                self.edits.append_edit(self.progress_msg, message['output']['data'][0][-1][-1] + '…')
+                self.edits.append_edit(self.progress_msg, HuggingFace.chatbot_parse_html(message['output']['data'][0][-1][-1]) + '[…]')
         elif message['msg'] == 'process_completed':
             logger.info("%s says it's done", self.name)
             try:
                 self.results = message['output']['data'][0]
             except KeyError:
+                logger.exception('wrong set of results: %s', message)
                 self.results = None
             ws.close()
         elif message['msg'] == 'queue_full':
@@ -123,7 +138,6 @@ class HuggingFaceWS(HuggingFace):
 class HuggingFacePush(HuggingFace):
     def run(self):
         for _ in range(self.data['times']):
-            self.hash = get_random_string(11)
             logger.info('%s: getting hash', self.name)
             r = requests_session.post(f'https://{self.data["space"]}.hf.space/api/queue/push/', json={
                 'fn_index': self.data['fn_index'],
@@ -199,9 +213,14 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
             pass
 
     progress_msg = update.message.reply_text(
-        '…' if data.get('quiet_progress') else f'{data["name"]}: connecting…',
+        '[…]' if data.get('quiet_progress') else f'{data["name"]}: connecting…',
         quote=False
     )
+    progress_msg.parse_mode = PARSEMODE_HTML if data['out_format'] == HuggingFaceFormat.CHATBOT else None
+
+    # if chatbot, add immediately to list of chatbot messages in this chat
+    if data['out_format'] == HuggingFaceFormat.CHATBOT:
+        context.bot_data['chatbot_state'][update.message.chat.id]['message_ids'].append(progress_msg.message_id)
 
     cls = HuggingFacePush if data.get('method') == 'push' else HuggingFaceWS
     result = cls(context.bot_data['edits'], progress_msg, data).run()
@@ -236,7 +255,7 @@ def huggingface(update: Update, context: CallbackContext, data) -> None:
         elif data['out_format'] == HuggingFaceFormat.TEXT:
             update.message.reply_text(result[:MAX_MESSAGE_LENGTH])
         elif data['out_format'] == HuggingFaceFormat.CHATBOT:
-            progress_msg.edit_text(result[-1][-1][:MAX_MESSAGE_LENGTH])
+            progress_msg.edit_text(HuggingFace.chatbot_parse_html(result[-1][-1][:MAX_MESSAGE_LENGTH]), parse_mode=PARSEMODE_HTML)
         if data['out_format'] != HuggingFaceFormat.CHATBOT:
             progress_msg.delete()
     else:

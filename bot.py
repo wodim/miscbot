@@ -3,7 +3,6 @@ from glob import glob
 import html
 from inspect import getdoc
 import os
-import pprint
 import signal
 import socket
 
@@ -20,8 +19,8 @@ from craiyon import command_craiyon, command_dalle
 from distort import (command_photo, command_distort, command_distort_caption,
                      command_invert, command_voice, command_wtf)
 from hf_spaces import (command_gfpgan, command_caption, command_sd, command_sd1,
-                       command_anime, command_clip, command_falcon_start,
-                       command_falcon_check)
+                       command_anime, command_clip, command_chatbot_start,
+                       command_chatbot_check)
 from message_history import MessageHistory
 from queues import Actions, Edits
 from relay import (command_relay_chat_photo, command_relay_text, command_relay_photo,
@@ -62,11 +61,11 @@ def command_debug(update: Update, context: CallbackContext) -> None:
     """replies with some debug info"""
     if is_admin(update.message.from_user.id):
         update.message.reply_text(ellipsis(f'{actions.dump()}\n{edits.dump()}', MAX_MESSAGE_LENGTH))
-        if len(context.bot_data['falcon_state']):
-            chats = ', '.join((f'{chat_id}#{len(lines)}' for chat_id, lines in context.bot_data['falcon_state'].items()))
-            update.message.reply_text(ellipsis(f'There is Falcon state for the following chats: {chats}', MAX_MESSAGE_LENGTH))
+        if len(context.bot_data['chatbot_state']):
+            chats = ', '.join((f'{chat_id}#{len(lines["history"])}' for chat_id, lines in context.bot_data['chatbot_state'].items()))
+            update.message.reply_text(ellipsis(f'There is chatbot state for the following chats: {chats}', MAX_MESSAGE_LENGTH))
         else:
-            update.message.reply_text('There is no Falcon state saved for any chats.')
+            update.message.reply_text('There is no chatbot state saved for any chats.')
     else:
         update.message.reply_animation(_config('error_animation'))
 
@@ -270,7 +269,8 @@ def command_ip(update: Update, _: CallbackContext) -> None:
         try:
             r = requests.get(f'https://api.ipgeolocation.io/ipgeo?ip={text}&apiKey={api_key}').json()
         except:
-            return update.message.reply_text('An error occurred when sending the API request.')
+            update.message.reply_text('An error occurred when sending the API request.')
+            return
         if r.get('message'):
             if 'IP to geolocation lookup for domain' in r['message']:
                 # it's a hostname so do a second pass resolving first
@@ -279,10 +279,12 @@ def command_ip(update: Update, _: CallbackContext) -> None:
                     r = requests.get(f'https://api.ipgeolocation.io/ipgeo?ip={text}&apiKey={api_key}').json()
                 except:
                     logger.exception("Couldn't resolve %s", text)
-                    return update.message.reply_text(f"Couldn't resolve {text}")
+                    update.message.reply_text(f"Couldn't resolve {text}")
+                    return
             else:
                 logger.info('Error returned: %s', r['message'])
-                return update.message.reply_text(f'An error occurred: {r["message"]}')
+                update.message.reply_text(f'An error occurred: {r["message"]}')
+                return
         message = f'<b>IP geolocation for {text}:</b>\n'
         if location := uniq(['district', 'city', 'state_prov', 'country_name']):
             message += f'<b>Location:</b> {location} <a href="https://www.google.com/maps/search/{location}/">[map]</a>\n'
@@ -348,7 +350,7 @@ if __name__ == '__main__':
         'edits': edits,
         'me': bot.get_me(),
         'last_tweet_ids': {},
-        'falcon_state': {},
+        'chatbot_state': {},
     })
 
     logger.info('Adding handlers...')
@@ -413,7 +415,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('anime', command_anime, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('wtf', command_wtf, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('clip', command_clip, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler('falcon', command_falcon_start, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler(['chatbot', 'falcon'], command_chatbot_start, run_async=True), group=40)
     dispatcher.add_handler(MessageHandler(Filters.photo & ~Filters.command & Filters.chat_type.groups & Filters.chat(_config_list('auto_captions', int)),
                                           command_caption, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler([x.replace('sound/', '') for x in glob('sound/*')], command_sound, run_async=True), group=40)
@@ -426,9 +428,9 @@ if __name__ == '__main__':
     dispatcher.add_handler(MessageHandler(Filters.caption & Filters.chat_type.group,
                                           command_distort_caption, run_async=True), group=41)
 
-    # this one checks all messages to see if they are falcon conversations
+    # this one checks all messages to see if they are chatbot conversations
     dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command & Filters.update.message & (Filters.chat_type.private | Filters.reply),
-                                          command_falcon_check, run_async=True), group=42)
+                                          command_chatbot_check, run_async=True), group=42)
 
     logger.info('Adding jobs to the queue...')
 
@@ -462,7 +464,7 @@ if __name__ == '__main__':
         ('caption',      '🔤'),
         ('anime',        '🌸'),
         ('wtf',          '🤔'),
-        ('falcon',       '🤖'),
+        ('chatbot',      '🤖'),
     ])
 
     logger.info('Booting poller...')

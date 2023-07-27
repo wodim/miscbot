@@ -66,11 +66,8 @@ soyjak_error_photo_url = https://booru.soy/_images/0b88e33e7dd98cf46d0777de7ceb1
 soyjak_cron_chat_id = -123123123123
 ; twitter feeds, format is username|chat_id
 twitter_feeds = someone|-123123123123, someone_else|-456456456456
-; keys for the 1.1 version of the twitter api
-twitter_consumer_key =
-twitter_consumer_secret =
-twitter_access_token =
-twitter_access_token_secret =
+; nitter instance used to retrieve twitter feeds
+twitter_nitter_instance = nitter.net
 ; this is the negative prompt that will be used with all image generators that support one
 negative_prompt = low quality
 ; blazing craiyon configuration
@@ -81,10 +78,6 @@ blazing_craiyon_scrambler_count = 18
 blazing_craiyon_next_prompt_blacklist = fox inappropriate explicit invalid please warning caution caption unable
 ; these are the tokens that will be used at random by blazing craiyon when posting stuff
 blazing_craiyon_tokens = 123123123:zzzzzzzzzzzzz, 456456456:yyyyyyyyyyyyy, 789789789:xxxxxxxxxxxxx
-; this is the starting prompt for falcon
-falcon_instructions = The following is a conversation between a highly knowledgeable and intelligent AI assistant, called Falcon, and a human user, called User. In the following interactions, User and Falcon will converse in natural language, and Falcon will answer User's questions. Falcon was built to be respectful, polite and inclusive. Falcon was built by the Technology Innovation Institute in Abu Dhabi. Falcon will never decline to answer a question, and always attempts to give an answer that User would be satisfied with. It knows a lot, and always tells the truth. The conversation begins.
-; this is how many answers will be saved when following a conversation. setting this too high will make falcon start saying nonsense after a while
-falcon_max_answers = 20
-; other falcon parameters
-falcon_temperature = 0.8
-falcon_p = 0.9
+; chatbot parameters
+chatbot_temperature = 0.95
+chatbot_p = 0.85

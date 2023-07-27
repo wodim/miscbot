@@ -1,10 +1,11 @@
 import random
 
 from telegram import Update
+from telegram.constants import MAX_MESSAGE_LENGTH
 from telegram.ext import CallbackContext
 
 from huggingface import HuggingFaceFormat, huggingface
-from utils import _config
+from utils import _config, get_random_string
 
 
 def command_gfpgan(update: Update, context: CallbackContext) -> None:
@@ -76,55 +77,53 @@ def command_clip(update: Update, context: CallbackContext) -> None:
     })
 
 
-def command_falcon_start(update: Update, context: CallbackContext) -> None:
-    """starts a new conversation with Falcon"""
+def command_chatbot_start(update: Update, context: CallbackContext) -> None:
+    """starts a new conversation with the chatbot"""
     if update.message.chat.type == 'private':
         message = ('Started a new conversation. '
-                   'You can restart the conversation by using /falcon again. '
+                   'You can restart the conversation by using /chatbot again. '
                    'To go back to automatic distortion of text, use /distort with no parameters.')
     else:
         message = ('Started a new conversation. '
                    'Remember to quote any of my messages if you want me to reply. '
-                   'You can restart the conversation by using /falcon again.')
-    update.message.reply_text(message)
-    context.bot_data['falcon_state'][update.message.chat.id] = []
+                   'You can restart the conversation by using /chatbot again.')
+    context.bot_data['chatbot_state'][update.message.chat.id] = {
+        'history': [],
+        'hash': get_random_string(11),
+        'message_ids': [update.message.reply_text(message).message_id],
+    }
 
 
-def command_falcon_check(update: Update, context: CallbackContext) -> None:
-    """checks if a message warrants a response from falcon"""
-    # do nothing if in private and the bot is not in falcon mode
-    if (update.message.chat.type == 'private' and
-            context.bot_data['falcon_state'].get(update.message.chat.id) is None):
+def command_chatbot_check(update: Update, context: CallbackContext) -> None:
+    """checks if a message warrants a response from the chatbot"""
+    state_exists = update.message.chat.id in context.bot_data['chatbot_state']
+
+    # do nothing if in private and the bot is not in chatbot mode
+    if update.message.chat.type == 'private' and not state_exists:
         return
-    # do nothing if in public but they weren't quoting me - this command handler
-    # only fires for replies, but they are not necessarily replies to the bot
-    if (update.message.chat.type != 'private' and
-            update.message.reply_to_message.from_user.id != context.bot_data['me'].id):
+    # do nothing if in public but they weren't quoting a chatbot response
+    if update.message.chat.type != 'private' and (not hasattr(update.message, 'reply_to_message') or not state_exists or
+            update.message.reply_to_message.message_id not in context.bot_data['chatbot_state'][update.message.chat.id]['message_ids']):
         return
 
-    previous_state = context.bot_data['falcon_state'].get(update.message.chat.id)
-    if update.message.chat.type != 'private' and previous_state is None:
-        # this sends the "conversation started" message in groups if appropriate
-        command_falcon_start(update, context)
+    previous_history = context.bot_data['chatbot_state'][update.message.chat.id]['history'] if state_exists else []
 
     conversation = huggingface(update, context, {
-        'name': 'Falcon',
-        'space': 'huggingfaceh4-falcon-chat',
-        'in_format': [HuggingFaceFormat.TEXT,
-                      previous_state[:int(_config('falcon_max_answers'))]
-                          if isinstance(previous_state, list) else [],
-                      _config('falcon_instructions'),
-                      float(_config('falcon_temperature')),
-                      float(_config('falcon_p')),],
+        'name': 'ChatGML2-6B',
+        'space': 'mikeee-chatglm2-6b-4bit',
+        'in_format': [False,
+                      HuggingFaceFormat.TEXT,
+                      previous_history,
+                      MAX_MESSAGE_LENGTH,
+                      float(_config('chatbot_p')),
+                      float(_config('chatbot_temperature')),
+                      None,
+                      None,],
         'out_format': HuggingFaceFormat.CHATBOT,
-        'fn_index': 1,
         'quiet_progress': True,
+        'hash': context.bot_data['chatbot_state'][update.message.chat.id]['hash'],
     })
 
-    # only save the conversation state if it didn't change during the execution of this
-    # handler. this is done to avoid saving the old state if /falcon is used while
-    # we were generating a response in this chat id, but it won't work if /falcon is
-    # used to interrupt the first answer. still it's better than nothing.
-    # also, don't save if falcon failed.
-    if conversation and previous_state == context.bot_data['falcon_state'].get(update.message.chat.id):
-        context.bot_data['falcon_state'][update.message.chat.id] = conversation
+    # don't save history if chatbot failed
+    if conversation:
+        context.bot_data['chatbot_state'][update.message.chat.id]['history'] = conversation
