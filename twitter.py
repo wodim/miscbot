@@ -1,11 +1,14 @@
+import re
+
+import feedparser
 from telegram import Update
 from telegram.ext import CallbackContext
-from tweepy import API, OAuthHandler
 
-from utils import _config, is_admin, logger
+from utils import _config, is_admin, get_url, logger
 
 
 def _get_twitter_feeds() -> dict:
+    """retrieves a {screen_name: [chat_id, chat_id, ...], ...} dict of all watched feeds"""
     if feeds := _config('twitter_feeds'):
         ret = {}
         for feed in feeds.split(','):
@@ -18,39 +21,49 @@ def _get_twitter_feeds() -> dict:
     return {}
 
 
+RX_ID = re.compile(r'(\d+)#m$')
+def get_id_from_guid(permalink: str) -> int:
+    """retrieves the tweet id from a tweet permalink from nitter (hence the #m)"""
+    return int(RX_ID.search(permalink)[1])
 def _create_link(screen_name: str, id_: int) -> str:
+    """creates a tweet permalink from a screen name and a tweet id"""
     return f'https://vxtwitter.com/{screen_name}/status/{id_}'
 
 
-auth = OAuthHandler(_config('twitter_consumer_key'), _config('twitter_consumer_secret'))
-auth.set_access_token(_config('twitter_access_token'), _config('twitter_access_token_secret'))
-api = API(auth)
-
-
 def cron_twitter(context: CallbackContext) -> None:
+    """this is the twitter cron job that looks for new tweets and posts them"""
     for screen_name, chat_ids in _get_twitter_feeds():
-        try:
-            last_tweets = api.user_timeline(screen_name=screen_name)
-        except Exception as exc:
-            logger.info('Error retrieving tweets from "%s": %s', screen_name, exc)
-            continue
-        if not last_tweets:
-            continue
+        # feedparse allows you to specify the url directly, but it doesn't seem to ever
+        # time out. also, get_url uses the same http session to perform all requests, so
+        # we get better performance.
+        feed = feedparser.parse(get_url(f'https://{_config("twitter_nitter_instance")}/{screen_name}/with_replies/rss'))
 
-        last_id = context.bot_data['last_tweet_ids'].get(screen_name)
-        # last_tweets[0] won't crash here because we already checked for last_tweets earlier
-        context.bot_data['last_tweet_ids'][screen_name] = last_tweets[0].id
+        if feed['bozo'] == 1:
+            # failed to parse the feed
+            logger.info('Error retrieving %s: %s', screen_name, repr(feed.get('bozo_exception', '???')))
+        elif not feed.entries:
+            logger.info('%s has no tweets', screen_name)
+        else:
+            last_id = context.bot_data['last_tweet_ids'].get(screen_name)
 
-        if last_id:  # will be False the first time this is run so we don't post anything
-            for tweet in last_tweets[::-1]:
-                if tweet.id > last_id and (
-                    # don't show self-retweets
-                    not hasattr(tweet, 'retweeted_status') or
-                    tweet.retweeted_status.user.screen_name != tweet.user.screen_name
-                ):
-                    url = _create_link(screen_name, tweet.id)
-                    logger.info('Posting %s', url)
+            # extract the tweet ids from all tweets and sort the tweets by id
+            # they could be out of order because of retweets bringing up old ids
+            for entry in feed.entries:
+                entry.id = get_id_from_guid(entry.guid)
+            feed.entries.sort(key=lambda entry: entry.id)
+
+            # feed.entries[-1] won't crash here because we already checked for feed.entries earlier
+            context.bot_data['last_tweet_ids'][screen_name] = get_id_from_guid(feed.entries[-1].guid)
+
+            # we didn't have anything saved, so this feed was just added. don't post anything
+            if not last_id:
+                continue
+
+            for entry in feed.entries:
+                if entry.id > last_id and entry.author.lower() == f'@{screen_name}':
+                    url = _create_link(screen_name, entry.id)
                     for chat_id in chat_ids:
+                        logger.info('Posting %s -> %d', url, chat_id)
                         context.bot.send_message(chat_id, url)
 
 
