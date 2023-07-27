@@ -172,7 +172,7 @@ def clamp(n, floor, ceil):
 requests_session = requests.Session()
 # TODO ua, etc
 def get_url(url):
-    logger.info('downloading %s', url)
+    logger.debug('downloading %s', url)
     return requests_session.get(url).content
 
 
