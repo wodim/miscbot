@@ -170,9 +170,16 @@ def clamp(n, floor, ceil):
 
 
 requests_session = requests.Session()
+if ua := _config('http_user_agent'):
+    requests_session.headers['User-Agent'] = ua
 # TODO ua, etc
-def get_url(url):
-    logger.debug('downloading %s', url)
+def get_url(url: str, use_tor: bool = False) -> bytes:
+    if use_tor:
+        logger.debug('downloading using tor: %s', url)
+        proxies = dict(http='socks5://127.0.0.1:9050',
+                       https='socks5://127.0.0.1:9050')
+        return requests_session.get(url, proxies=proxies).content
+    logger.debug('downloading: %s', url)
     return requests_session.get(url).content
 
 

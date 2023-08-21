@@ -15,10 +15,10 @@ from telegram.utils.request import Request
 
 from _4chan import cron_4chan, command_thread
 from calc import command_calc
-from craiyon import command_craiyon, command_dalle
+from craiyon import command_dalle
 from distort import (command_photo, command_distort, command_distort_caption,
                      command_invert, command_voice, command_wtf)
-from hf_spaces import (command_gfpgan, command_caption, command_sd, command_sd1,
+from hf_spaces import (command_gfpgan, command_caption,
                        command_anime, command_clip, command_chatbot_start,
                        command_chatbot_check)
 from message_history import MessageHistory
@@ -349,7 +349,7 @@ if __name__ == '__main__':
         'actions': actions,
         'edits': edits,
         'me': bot.get_me(),
-        'last_tweet_ids': {},
+        'last_twitter_id': None,
         'chatbot_state': {},
     })
 
@@ -402,12 +402,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('voice', command_voice, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('invert', command_invert, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('photo', command_photo, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler('craiyon', command_craiyon, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('dalle', command_dalle, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler('sd', command_sd, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler('sd1', command_sd1, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler('ai', command_craiyon, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler('ai', command_sd, run_async=True), group=41)
     dispatcher.add_handler(CommandHandler('gfpgan', command_gfpgan, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('ip', command_ip, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('soyjak', command_soyjak, run_async=True), group=40)
@@ -436,7 +431,7 @@ if __name__ == '__main__':
 
     dispatcher.job_queue.run_repeating(cron_delete, interval=20)
 
-    dispatcher.job_queue.run_repeating(cron_twitter, interval=10, first=1)
+    dispatcher.job_queue.run_repeating(cron_twitter, interval=60, first=1)
 
     if actions_cron_interval > 0:
         dispatcher.job_queue.run_repeating(actions.cron, interval=actions_cron_interval, name='actions').enabled = False
@@ -457,8 +452,7 @@ if __name__ == '__main__':
         ('distort',      '🔨'),
         ('thread',       '🍀'),
         ('calc',         '🧮'),
-        ('craiyon',      '🎨'),
-        ('sd',           '🖼️'),
+        ('dalle',        '🎨'),
         ('gfpgan',       '📈'),
         ('soyjak',       '🥛'),
         ('caption',      '🔤'),

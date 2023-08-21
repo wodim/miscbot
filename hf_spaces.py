@@ -32,28 +32,6 @@ def command_caption(update: Update, context: CallbackContext) -> None:
     })
 
 
-def command_sd(update: Update, context: CallbackContext) -> None:
-    """requests images for a specific prompt from stable diffusion 2.1"""
-    huggingface(update, context, {
-        'name': 'Stable Diffusion 2.1',
-        'space': 'stabilityai-stable-diffusion',
-        'in_format': [HuggingFaceFormat.TEXT, _config('negative_prompt'), 9],
-        'out_format': [HuggingFaceFormat.PHOTO],
-        'fn_index': 2,
-    })
-
-
-def command_sd1(update: Update, context: CallbackContext) -> None:
-    """requests images for a specific prompt from stable diffusion"""
-    huggingface(update, context, {
-        'name': 'Stable Diffusion 1',
-        'space': 'stabilityai-stable-diffusion-1',
-        'in_format': [HuggingFaceFormat.TEXT, 4, 50, 9, random.randint(0, 2147483647)],
-        'out_format': [HuggingFaceFormat.PHOTO],
-        'fn_index': 2,
-    })
-
-
 def command_anime(update: Update, context: CallbackContext) -> None:
     """turns a photo into an anime drawing using AnimeGANv2"""
     huggingface(update, context, {
