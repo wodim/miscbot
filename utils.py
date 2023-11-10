@@ -10,7 +10,7 @@ import string
 import unicodedata
 
 import emoji
-import requests
+from curl_cffi import requests
 from wand.image import Image
 
 
@@ -169,18 +169,17 @@ def clamp(n, floor, ceil):
     return max(floor, min(n, ceil))
 
 
-requests_session = requests.Session()
-if ua := _config('http_user_agent'):
-    requests_session.headers['User-Agent'] = ua
-# TODO ua, etc
+requests_session = requests.Session(impersonate='chrome110',
+                                    timeout=int(_config('http_timeout') or 5))
 def get_url(url: str, use_tor: bool = False) -> bytes:
+    timeout = int(_config('http_timeout') or 5)
     if use_tor:
-        logger.debug('downloading using tor: %s', url)
+        logger.info('downloading using tor: %s', url)
         proxies = dict(http='socks5://127.0.0.1:9050',
                        https='socks5://127.0.0.1:9050')
-        return requests_session.get(url, proxies=proxies).content
-    logger.debug('downloading: %s', url)
-    return requests_session.get(url).content
+        return requests_session.get(url, proxies=proxies, timeout=timeout).content
+    logger.info('downloading: %s', url)
+    return requests_session.get(url, timeout=timeout).content
 
 
 class Downloader:

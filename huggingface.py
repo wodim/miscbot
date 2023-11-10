@@ -85,6 +85,7 @@ class HuggingFaceWS(HuggingFace):
 
     def on_open(self, ws):
         logger.info('%s: connected', self.name)
+        self.edits.append_edit(self.progress_msg, (f'{self.name}: connected.'))
         if self.data.get('hash_on_open'):
             logger.info('%s: sending on_open hash', self.name)
             ws.send(json.dumps({'hash': self.hash}))

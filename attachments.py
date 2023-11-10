@@ -44,7 +44,7 @@ def _download_anything(message, context):
         return download(message.audio, 'ogg')
 
 
-VIDEO_TO_PHOTO_CMD = r"""ffmpeg -i '{filename}' -vf select=eq\(n\\,0\) '{filename}.jpg'"""
+VIDEO_TO_PHOTO_CMD = r"""ffmpeg -i '{filename}' -frames:v 1 -vf select=eq\(n\\,0\) '{filename}.jpg'"""
 def _video_to_photo(filename: str) -> str:
     if subprocess.call(VIDEO_TO_PHOTO_CMD.format(filename=filename), shell=True) != 0:
         return None
@@ -60,20 +60,35 @@ def _video_to_voice(filename: str) -> str:
     return filename + '.ogg'
 
 
-def download_attachment(update, context, type_: AttachmentType=None):
+def get_attachment_type(message):
+    if getattr(message, 'photo'):
+        return AttachmentType.PHOTO
+    if getattr(message, 'sticker'):
+        if message.sticker.is_animated:
+            return AttachmentType.STICKER_ANIMATED
+        else:
+            return AttachmentType.STICKER_STATIC
+    if (getattr(message, 'video') or getattr(message, 'animation') or
+            getattr(message, 'video_note')):
+        return AttachmentType.VIDEO
+    if getattr(message, 'audio') or getattr(message, 'voice'):
+        return AttachmentType.AUDIO
+
+
+def download_attachment(update, context, type_: AttachmentType=None, use_quote: bool=True):
     """downloads an attachment from a message or a quoted message,
         converting to the target type if necessary
         TODO needs to implement remaining types"""
-    message = update.message.reply_to_message or update.message
+    if use_quote:
+        message = update.message.reply_to_message or update.message
+    else:
+        message = update.message
     if not type_:
         return _download_anything(message, context)
     if type_ == AttachmentType.PHOTO:
-        if getattr(message, 'photo'):
+        if get_attachment_type(message) == AttachmentType.PHOTO:
             return _download_anything(message, context)
-        if getattr(message, 'sticker'):
-            if message.sticker.is_animated:
-                # can't be converted
-                return None
+        if get_attachment_type(message) == AttachmentType.STICKER_STATIC:
             filename = _download_anything(message, context)
             if filename.endswith('.webp'):
                 img = Image(filename=filename)
@@ -85,10 +100,11 @@ def download_attachment(update, context, type_: AttachmentType=None):
                 return filename + '.jpg'
             if filename.endswith('.webm'):
                 return _video_to_photo(filename)
-        if (getattr(message, 'video') or getattr(message, 'animation') or
-                getattr(message, 'video_note')):
+        if get_attachment_type(message) == AttachmentType.STICKER_ANIMATED:
+            # can't be converted
+            return None
+        if get_attachment_type(message) == AttachmentType.VIDEO:
             return _video_to_photo(_download_anything(message, context))
     if type_ == AttachmentType.AUDIO:
-        if (getattr(message, 'video') or getattr(message, 'audio') or
-                getattr(message, 'voice') or getattr(message, 'video_note')):
+        if get_attachment_type(message) in (AttachmentType.VIDEO, AttachmentType.AUDIO):
             return _video_to_voice(_download_anything(message, context))

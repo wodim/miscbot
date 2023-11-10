@@ -75,3 +75,4 @@ chatbot_temperature = 0.95
 chatbot_p = 0.85
 ; user agent that will be used for most external http requests
 http_user_agent = Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/116.0
+http_timeout = 5

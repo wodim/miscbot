@@ -6,6 +6,7 @@ import os
 import signal
 import socket
 
+from bs4 import BeautifulSoup
 import requests
 from telegram import Bot, Update
 from telegram.constants import MAX_MESSAGE_LENGTH, PARSEMODE_HTML
@@ -15,12 +16,12 @@ from telegram.utils.request import Request
 
 from _4chan import cron_4chan, command_thread
 from calc import command_calc
-from craiyon import command_dalle
+from craiyon import command_dalle, command_craiyon
 from distort import (command_photo, command_distort, command_distort_caption,
                      command_invert, command_voice, command_wtf)
 from hf_spaces import (command_gfpgan, command_caption,
                        command_anime, command_clip, command_chatbot_start,
-                       command_chatbot_check)
+                       command_chatbot_check, command_sd)
 from message_history import MessageHistory
 from queues import Actions, Edits
 from relay import (command_relay_chat_photo, command_relay_text, command_relay_photo,
@@ -32,7 +33,7 @@ from translate import command_translate
 from twitter import command_twitter, cron_twitter
 from utils import (_config, _config_list, clean_up, ellipsis,
                    get_command_args, get_relays, logger, is_admin,
-                   send_admin_message, MyPrettyPrinter)
+                   send_admin_message, MyPrettyPrinter, get_url)
 
 
 def command_normalize(update: Update, _: CallbackContext) -> None:
@@ -327,6 +328,17 @@ def command_contact(update: Update, _: CallbackContext) -> None:
         update.message.reply_text(CONTACT_HELP)
 
 
+def command_chiste(update: Update, _: CallbackContext) -> None:
+    """envía un chiste"""
+    soup = BeautifulSoup(get_url('https://aquitodo.es/chistes/ChistesImport/Chistes/'), features='lxml')
+    text = (soup.select_one('a')
+            .text
+            .replace('   ', '\n')
+            .replace('\n  ... M\xe1s en ChisteMania.com', ''))
+    text = bytes(text, encoding='cp1252', errors='ignore').decode('utf8')
+    update.message.reply_text(text, quote=False)
+
+
 if __name__ == '__main__':
     logger.info('Hello!!!')
     # connection pool size is workers + updater + dispatcher + job queue + main thread
@@ -349,7 +361,7 @@ if __name__ == '__main__':
         'actions': actions,
         'edits': edits,
         'me': bot.get_me(),
-        'last_twitter_id': None,
+        'seen_twitter_ids': None,
         'chatbot_state': {},
     })
 
@@ -396,7 +408,7 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('contact', command_contact), group=40)
     dispatcher.add_handler(CommandHandler('twitter', command_twitter), group=40)
     dispatcher.add_handler(CommandHandler('thread', command_thread, run_async=True), group=40)
-    dispatcher.add_handler(CommandHandler('clear', command_clear, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler(['clear', 'clean'], command_clear, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('translate', command_translate, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler(['distort', 'scramble'], command_distort, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('voice', command_voice, run_async=True), group=40)
@@ -410,7 +422,12 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('anime', command_anime, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('wtf', command_wtf, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler('clip', command_clip, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('chiste', command_chiste, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler(['chatbot', 'falcon'], command_chatbot_start, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('craiyon', command_craiyon, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('sd', command_sd, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('ai', command_craiyon, run_async=True), group=40)
+    dispatcher.add_handler(CommandHandler('ai', command_sd, run_async=True), group=41)
     dispatcher.add_handler(MessageHandler(Filters.photo & ~Filters.command & Filters.chat_type.groups & Filters.chat(_config_list('auto_captions', int)),
                                           command_caption, run_async=True), group=40)
     dispatcher.add_handler(CommandHandler([x.replace('sound/', '') for x in glob('sound/*')], command_sound, run_async=True), group=40)
@@ -452,13 +469,15 @@ if __name__ == '__main__':
         ('distort',      '🔨'),
         ('thread',       '🍀'),
         ('calc',         '🧮'),
-        ('dalle',        '🎨'),
+        ('craiyon',      '🎨'),
+        ('sd',           '🖼️'),
         ('gfpgan',       '📈'),
         ('soyjak',       '🥛'),
         ('caption',      '🔤'),
         ('anime',        '🌸'),
         ('wtf',          '🤔'),
         ('chatbot',      '🤖'),
+        ('chiste',       '😂'),
     ])
 
     logger.info('Booting poller...')

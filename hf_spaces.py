@@ -8,16 +8,27 @@ from huggingface import HuggingFaceFormat, huggingface
 from utils import _config, get_random_string
 
 
+def command_sd(update: Update, context: CallbackContext) -> None:
+    """requests images for a specific prompt from stable diffusion 2.1"""
+    huggingface(update, context, {
+        'name': 'Stable Diffusion 2.1',
+        'space': 'stabilityai-stable-diffusion',
+        'in_format': [HuggingFaceFormat.TEXT, _config('negative_prompt'), 9],
+        'out_format': [HuggingFaceFormat.PHOTO],
+        'fn_index': 2,
+    })
+
+
 def command_gfpgan(update: Update, context: CallbackContext) -> None:
     """requests an upscaled image from GFPGAN"""
     huggingface(update, context, {
         'name': 'GFPGAN',
-        'space': 'vicalloy-gfpgan',
-        'in_format': [HuggingFaceFormat.PHOTO, 'v1.4', '4', 0],
+        'space': 'algoworks-image-face-upscale-restoration-gfpgan-pub',
+        'in_format': [HuggingFaceFormat.PHOTO, 'v1.4', '4'],
         'out_format': HuggingFaceFormat.PHOTO,
-        'hash_on_open': True,
-        'fn_index': 1,
+        'fn_index': 0,
         'multiple': True,
+        'hash_on_open': True,
     })
 
 
@@ -33,13 +44,12 @@ def command_caption(update: Update, context: CallbackContext) -> None:
 
 
 def command_anime(update: Update, context: CallbackContext) -> None:
-    """turns a photo into an anime drawing using AnimeGANv2"""
+    """turns a photo into an anime drawing using AnimeGANv1"""
     huggingface(update, context, {
-        'name': 'AnimeGANv2',
-        'space': 'akhaliq-animeganv2',
-        'in_format': [HuggingFaceFormat.PHOTO, 'version 2 (🔺 robustness,🔻 stylization)'],
+        'name': 'AnimeGANv1',
+        'space': 'akhaliq-animeganv1',
+        'in_format': [HuggingFaceFormat.PHOTO],
         'out_format': HuggingFaceFormat.PHOTO,
-        'method': 'push',
         'multiple': True,
     })
 

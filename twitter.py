@@ -33,7 +33,6 @@ def _create_link(screen_name: str, id_: int) -> str:
 def cron_twitter(context: CallbackContext) -> None:
     """this is the twitter cron job that looks for new tweets and posts them"""
     entries = {}
-    last_twitter_id = context.bot_data['last_twitter_id']
 
     for screen_name, chat_ids in _get_twitter_feeds():  # these are already deduplicated
         # feedparse allows you to specify the url directly, but it doesn't seem to ever
@@ -42,7 +41,7 @@ def cron_twitter(context: CallbackContext) -> None:
         for term in [screen_name, screen_name[1:]] if screen_name.startswith('@') else [screen_name]:
             feed_url = (f'https://{_config("twitter_nitter_instance")}/search/rss?f=tweets&q={term[1:]}' if term.startswith('@')
                         else f'https://{_config("twitter_nitter_instance")}/{term}/with_replies/rss')
-            feed = feedparser.parse(get_url(feed_url, use_tor=True))
+            feed = feedparser.parse(get_url(feed_url))
 
             if feed['bozo'] == 1:
                 # failed to parse the feed
@@ -60,22 +59,22 @@ def cron_twitter(context: CallbackContext) -> None:
                         entries[entry.id] = entry
 
     if sorted_entries := dict(sorted(entries.items())):
-        # store a new last id, but only if there wasn't one stored or
-        # if the new one is greater than the stored one
-        new_last_twitter_id = get_id_from_guid(list(sorted_entries.values())[-1].guid)
-        if last_twitter_id is None or new_last_twitter_id > context.bot_data['last_twitter_id']:
-            context.bot_data['last_twitter_id'] = new_last_twitter_id
+        first_run = context.bot_data['seen_twitter_ids'] is None
+        if first_run:
+            context.bot_data['seen_twitter_ids'] = []
 
-        if last_twitter_id is not None:
-            for entry in sorted_entries.values():
-                if entry.id > last_twitter_id:
-                    url = _create_link(entry.author[1:], entry.id)
-                    for chat_id in entry.recipients:
-                        logger.info('Posting %s -> %d', url, chat_id)
-                        try:
-                            context.bot.send_message(chat_id, url)
-                        except:
-                            logger.exception("Couldn't post")
+        for entry in sorted_entries.values():
+            if entry.id in context.bot_data['seen_twitter_ids']:
+                continue
+            context.bot_data['seen_twitter_ids'].append(entry.id)
+            if not first_run:
+                url = _create_link(entry.author[1:], entry.id)
+                for chat_id in entry.recipients:
+                    logger.info('Posting %s -> %d', url, chat_id)
+                    try:
+                        context.bot.send_message(chat_id, url)
+                    except:
+                        logger.exception("Couldn't post")
     else:
         logger.info('Nothing to work with.')
 
@@ -83,8 +82,9 @@ def cron_twitter(context: CallbackContext) -> None:
 def command_twitter(update: Update, context: CallbackContext) -> None:
     """shows latest saved tweets for each account we're watching"""
     if is_admin(update.message.from_user.id):
-        if last_twitter_id := context.bot_data['last_twitter_id']:
-            update.message.reply_text(f'Last tweet saved: {_create_link("someone", last_twitter_id)}')
+        if context.bot_data['seen_twitter_ids'] is not None and len(context.bot_data['seen_twitter_ids']) > 0:
+            update.message.reply_text(f'Last tweet saved: {_create_link("someone", context.bot_data["seen_twitter_ids"][-1])}\n'
+                                      f'{len(context.bot_data["seen_twitter_ids"])} entries saved.')
         else:
             update.message.reply_text('Nothing saved (yet).')
     else:

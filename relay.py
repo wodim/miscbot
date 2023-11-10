@@ -1,13 +1,14 @@
 import html
 import os
 
+from attachments import AttachmentType, download_attachment
 from telegram import Update
 from telegram.constants import MAX_CAPTION_LENGTH, MAX_MESSAGE_LENGTH, PARSEMODE_HTML
 from telegram.ext import CallbackContext
 
 from distort import sub_distort, sub_invert
 from translate import get_scramble_languages, sub_translate
-from utils import _config, ellipsis, get_random_string, get_relays, get_user_fullname
+from utils import _config, ellipsis, get_random_string, get_relays, get_user_fullname, logger
 
 
 def command_relay_text(update: Update, context: CallbackContext) -> None:
@@ -25,19 +26,10 @@ def command_relay_photo(update: Update, context: CallbackContext) -> None:
     scrambles the caption if any and sends to the matching channel"""
     context.bot_data['message_history'].push(update.message)
 
-    if update.message.sticker:
-        if update.message.sticker.is_animated:
-            return
-        filename = context.bot.get_file(update.message.sticker.file_id).\
-            download(custom_path=get_random_string(12) + '.jpg')
-        with open(filename, 'rb') as fp:
-            if fp.read(4) in (b'RIFF', b'\x1a\x45\xdf\xa3'):
-                # this is a webm, ignore it
-                os.remove(filename)
-                return
-    else:
-        filename = context.bot.get_file(update.message.photo[-1]).\
-            download(custom_path=get_random_string(12) + '.jpg')
+    filename = download_attachment(update, context, AttachmentType.PHOTO, False)
+    if not filename:
+        # can't be turned into photo (animated sticker)
+        return
     distorted_filename = sub_distort(filename, scale=40)
 
     text, trace = None, None
