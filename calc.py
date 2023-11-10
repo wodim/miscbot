@@ -36,7 +36,7 @@ def command_calc(update: Update, context: CallbackContext) -> None:
     context.bot_data['actions'].append(update.message.chat_id, ChatAction.TYPING)
 
     with subprocess.Popen(['bc', '-l'], stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
-        proc.stdin.write(bytes(statement + '\n', encoding='utf8'))
+        proc.stdin.write(bytes('scale=3; ' + statement + '\n', encoding='utf8'))
 
         try:
             stdout, stderr = proc.communicate(timeout=int(_config('calc_timeout')))
